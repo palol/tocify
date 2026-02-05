@@ -1,255 +1,41 @@
 # Weekly ToC Digest (week of 2026-02-05)
 
-No high-weight keyword matches, general interest evaluated. The following items explore themes crucial to neuroscience, such as neuronal processing, brain disorders, and technological innovations in cognitive neuroscience. Prioritized based on potential interest and relevance to emerging research trends and technologies, particularly AI and neuroscience. Triage of articles focused on advancements in neuroscience and computational biology with potential interdisciplinary applications.
+Processed RSS items for relevance based on interests. Items from Nature and related journals covering diverse areas including cancer therapies, environmental research, and technological advances. Triaging articles relevant to neurological modulation, cancer therapy, and depression dynamics.
 
-**Included:** 29 (score ≥ 0.65)  
-**Scored:** 33 total items
+**Included:** 23 (score ≥ 0.65)  
+**Scored:** 26 total items
 
 ---
 
-## [Minocycline attenuates panicogenic responses in a CO<sub>2</sub>-induced panic attack model: a translational approach](https://www.nature.com/articles/s41398-026-03836-7)
-*Translational Psychiatry*  
-Score: **1.00**  
-Published: 2026-02-03T00:00:00+00:00
-Tags: drug evaluation, panic disorder, CO2 model
+## [ExSEnt for explainable dementia detection: disentangling temporal and amplitude-driven complexity boosts EEG-based classification](https://www.biorxiv.org/content/10.64898/2026.02.02.703144v1?rss=1)
+*bioRxiv Subject Collection: Neuroscience*  
+Score: **0.95**  
+Published: 2026-02-04T00:00:00+00:00
+Tags: EEG, dementia, complexity
 
-This research highlights a potential new use for minocycline, providing translational insights into panic disorder treatment.
+The study introduces a novel entropy-based method for dementia detection using EEG, which is crucial for early intervention.
 
 <details>
 <summary>RSS summary</summary>
 
-<p>Translational Psychiatry, Published online: 03 February 2026; <a href="https://www.nature.com/articles/s41398-026-03836-7">doi:10.1038/s41398-026-03836-7</a></p>Minocycline attenuates panicogenic responses in a CO<sub>2</sub>-induced panic attack model: a translational approach
+Early detection of dementia enables timely intervention and better care planning. Electroencephalography, being accessible and noninvasive, offers a practical avenue for monitoring pathological alterations in neural activity. Classical biomarkers like the theta-to-alpha power ratio TAR along with complexity measures, are common methods that are usually evaluated and used for dementia detection. In this study, we aimed to assess the discriminative ability of a novel entropy-based family of measur…
 
 </details>
 
 ---
 
-## [Early psychosocial deprivation alters the refinement of neural dynamics across adolescence](https://www.pnas.org/doi/abs/10.1073/pnas.2514979123?af=R)
-*Proceedings of the National Academy of Sciences: Neuroscience*  
-Score: **0.98**  
-Published: 2026-02-02T08:00:00+00:00
-Tags: developmental neuroscience, adolescence, psychosocial deprivation
-
-This study explores the developmental impacts of early deprivation on neural dynamics, providing insights into developmental neuroscience.
-
-<details>
-<summary>RSS summary</summary>
-
-Proceedings of the National Academy of Sciences, Volume 123, Issue 6, February 2026. <br />SignificanceAdolescence is a period of major behavioral and neural change. Here, we use modeling to examine how the trajectory of recurrent computations supporting cognitive control develops across adolescence. Using data from the Bucharest Early ...
-
-</details>
-
----
-
-## [Open-source AI tool beats giant LLMs in literature reviews — and gets citations right](https://www.nature.com/articles/d41586-026-00347-9)
+## [Innovative CAR-T therapy destroys cancer cells without dangerous side effects](https://www.nature.com/articles/d41586-026-00358-6)
 *Nature*  
 Score: **0.95**  
 Published: 2026-02-04T00:00:00+00:00
-Tags: AI, LLM, literature review
+Tags: CAR-T, cancer, immune system
 
-This article highlights an AI tool outperforming larger models in literature reviews, emphasizing transparency and cost-effectiveness.
-
-<details>
-<summary>RSS summary</summary>
-
-<p>Nature, Published online: 04 February 2026; <a href="https://www.nature.com/articles/d41586-026-00347-9">doi:10.1038/d41586-026-00347-9</a></p>Researchers can deploy the cheap and transparent model on their own computer system.
-
-</details>
-
----
-
-## [Cluster dispersal shapes microbial diversity during community assembly](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1013918)
-*PLOS Computational Biology*  
-Score: **0.95**  
-Published: 2026-02-02T14:00:00+00:00
-Tags: microbial diversity, community assembly, microbiome
-
-The study focuses on microbial community dynamics, a key aspect of understanding microbiome-related health implications.
+This article discusses a novel CAR-T therapy that targets tumor cells without suppressing the immune system, highlighting its potential in cancer treatment without significant side effects.
 
 <details>
 <summary>RSS summary</summary>
 
-<p>by Loïc Marrec, Sonja Lehtinen</p> Identifying the drivers of diversity remains a central challenge in microbial ecology. In microbiota, within-community diversity is often linked to host health, which makes it all the more important to understand. Since many communities assemble de novo, microbial dispersal plays a critical role in shaping community structure during the early stages of assembly. While theoretical models typically assume microbes disperse individually, this overlooks cases wh…
-
-</details>
-
----
-
-## [Infants have rich visual categories in ventrotemporal cortex at 2 months of age](https://www.nature.com/articles/s41593-025-02187-8)
-*Nature Neuroscience*  
-Score: **0.93**  
-Published: 2026-02-02T00:00:00+00:00
-Tags: infant cognition, visual system, neuroscience
-
-The discovery of visual categorization abilities in infants provides insight into early brain development.
-
-<details>
-<summary>RSS summary</summary>
-
-<p>Nature Neuroscience, Published online: 02 February 2026; <a href="https://www.nature.com/articles/s41593-025-02187-8">doi:10.1038/s41593-025-02187-8</a></p>Using infant fMRI, the authors show that, by 2 months of age, representations in high-level visual cortex encode visual categories that align with deep neural networks, and lateral object-selective regions are later to develop.
-
-</details>
-
----
-
-## [Towards accurate and interpretable competency-based assessment: enhancing clinical competency assessment through multimodal AI and anomaly detection](https://www.nature.com/articles/s41746-025-02299-2)
-*npj Digital Medicine*  
-Score: **0.91**  
-Published: 2026-02-03T00:00:00+00:00
-Tags: AI, clinical assessment, anomaly detection
-
-Enhances clinical competency assessment with AI, which has implications for medical education and evaluation.
-
-<details>
-<summary>RSS summary</summary>
-
-<p>npj Digital Medicine, Published online: 03 February 2026; <a href="https://www.nature.com/articles/s41746-025-02299-2">doi:10.1038/s41746-025-02299-2</a></p>Towards accurate and interpretable competency-based assessment: enhancing clinical competency assessment through multimodal AI and anomaly detection
-
-</details>
-
----
-
-## [Hidden State Inference or Continuous Belief Updating during a Dynamic Visuomotor Skill](http://www.jneurosci.org/cgi/content/short/46/5/e1285252025?rss=1)
-*Journal of Neuroscience current issue*  
-Score: **0.90**  
-Published: 2026-02-04T17:30:29+00:00
-Tags: sensorimotor, adaptive, predictive processing
-
-The article explores adaptive sensorimotor behavior, relevant for understanding predictive processing and motor predictions based on environmental context.
-
-<details>
-<summary>RSS summary</summary>
-
-<p>Adaptive sensorimotor behavior requires individuals to flexibly update their beliefs in response to changes in environmental context. Theories of predictive processing propose that such flexibility arises from hierarchical inference, where higher-level beliefs about hidden states shape lower-level perceptual and motor predictions. Here, we test whether behavior in a naturalistic interception task is better explained by continuous belief updating or by more abrupt shifts driven by state infere…
-
-</details>
-
----
-
-## [Cell type-resolved proteomics reveals intra- and intercellular signalingin Alzheimers disease](https://www.biorxiv.org/content/10.64898/2026.02.02.703357v1?rss=1)
-*bioRxiv Subject Collection: Neuroscience*  
-Score: **0.90**  
-Published: 2026-02-04T00:00:00+00:00
-Tags: Alzheimer's disease, proteomics, neurons, microglia
-
-The study provides deep proteomic insights into Alzheimer's disease by investigating cell-specific proteomic changes, contributing to a better understanding of pathological cell interactions.
-
-<details>
-<summary>RSS summary</summary>
-
-Alzheimers disease (AD) arises from pathological interactions among diverse brain cell types, but cell-specific proteomic changes remain underexplored. Here, we present deep proteomic profiling of sorted or proximity-labeled brain cells from AD mouse models (5xFAD and AppNL-G-F) at multiple ages, quantifying 13,411 proteins in microglia (three subtypes), astrocytes, oligodendrocyte precursor cells, and neurons. We identified 3,028 differentially abundant proteins across these cell types, the maj…
-
-</details>
-
----
-
-## [Neural population geometry and optimal coding of tasks with shared latent structure](https://www.nature.com/articles/s41593-025-02183-y)
-*Nature Neuroscience*  
-Score: **0.90**  
-Published: 2026-02-04T00:00:00+00:00
-Tags: neuroscience, task coding
-
-Investigates neural correlations and geometry in task generalization, relevant for understanding brain dynamics during learning.
-
-<details>
-<summary>RSS summary</summary>
-
-<p>Nature Neuroscience, Published online: 04 February 2026; <a href="https://www.nature.com/articles/s41593-025-02183-y">doi:10.1038/s41593-025-02183-y</a></p>The authors analytically determine how neuronal correlations and geometry collectively determine readout generalization across tasks and show how these geometric features follow distinct trajectories over the course of learning.
-
-</details>
-
----
-
-## [Studying infant vision in the scanner and in silico reveals the richness of early brain function](https://www.nature.com/articles/s41593-025-02198-5)
-*Nature Neuroscience*  
-Score: **0.90**  
-Published: 2026-02-02T00:00:00+00:00
-Tags: infant vision, brain function, fMRI
-
-This study uses advanced imaging and modeling to reveal early visual processing in infants.
-
-<details>
-<summary>RSS summary</summary>
-
-<p>Nature Neuroscience, Published online: 02 February 2026; <a href="https://www.nature.com/articles/s41593-025-02198-5">doi:10.1038/s41593-025-02198-5</a></p>Determining what infants recognize in the things they see has been difficult. Using brain imaging and deep neural networks, we found that in 2-month-old infants the visual system represented not only how things looked but also what category they belonged to. This showed that features sufficient for object recognition are already important …
-
-</details>
-
----
-
-## [Impact of broadband availability and digital literacy on video telehealth use among cancer patients](https://www.nature.com/articles/s41746-026-02397-9)
-*npj Digital Medicine*  
-Score: **0.87**  
-Published: 2026-02-03T00:00:00+00:00
-Tags: telehealth, digital literacy, cancer care
-
-It addresses the critical role of digital literacy in accessing telehealth, crucial for patient outcomes.
-
----
-
-## [Multiscale segmentation using hierarchical phase-contrast tomography and deep learning](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1013923)
-*PLOS Computational Biology*  
-Score: **0.86**  
-Published: 2026-02-02T14:00:00+00:00
-Tags: image segmentation, deep learning, phase-contrast tomography
-
-The paper discusses innovative imaging techniques for biomedical research, highlighting advances in segmentation technology.
-
-<details>
-<summary>RSS summary</summary>
-
-<p>by Yang Zhou, Shahab Aslani, Yousef Javanmardi, Joseph Brunet, David Stansby, Saskia Carroll, Alexandre Bellier, Maximilian Ackermann, Paul Tafforeau, Peter D. Lee, Claire L. Walsh</p> Biomedical systems span multiple spatial scales, encompassing tiny functional units to entire organs. Interpreting these systems through image segmentation requires the effective propagation and integration of information across different scales. However, most existing segmentation methods are optimised for sin…
-
-</details>
-
----
-
-## [Deep Learning Reveals Cross-Modal Neural Representations of Auditory and Visual Mental Imagery in MEG](https://www.biorxiv.org/content/10.64898/2026.02.02.703195v1?rss=1)
-*bioRxiv Subject Collection: Neuroscience*  
-Score: **0.85**  
-Published: 2026-02-04T00:00:00+00:00
-Tags: MEG, auditory, visual, machine learning
-
-This research applies machine learning to analyze MEG data, enhancing the understanding of cross-modal neural representations, significant for brain-computer interfaces.
-
-<details>
-<summary>RSS summary</summary>
-
-Mental imagery provides a unique window into the brain's ability to internally simulate sensory experiences, offering valuable insights for both cognitive neuroscience and brain-computer interface (BCI) research. This study examined the neural representations of imagined auditory and visual stimuli using magnetoencephalography (MEG) and assessed the ability of machine learning models to decode these mental processes. MEG data were recorded from 18 right-handed participants during auditory and vi…
-
-</details>
-
----
-
-## [Pilot phase clinical trial of a wearable, electrochemical aptamer-based patch for continuous drug concentration measurement](https://www.nature.com/articles/s41587-026-03010-w)
-*Nature Biotechnology*  
-Score: **0.85**  
-Published: 2026-02-04T00:00:00+00:00
-Tags: wearables, biosensors, pharmacology
-
-Presents a novel wearable technology for monitoring drug levels, bridging biosensors and pharmacology.
-
-<details>
-<summary>RSS summary</summary>
-
-<p>Nature Biotechnology, Published online: 04 February 2026; <a href="https://www.nature.com/articles/s41587-026-03010-w">doi:10.1038/s41587-026-03010-w</a></p>A wearable that continuously measures the concentration of a drug is demonstrated in humans.
-
-</details>
-
----
-
-## [Microstructural profiles of the human superficial white matter and their associations to cortical geometry and connectivity](https://journals.plos.org/plosbiology/article?id=10.1371/journal.pbio.3003629)
-*PLOS Biology*  
-Score: **0.85**  
-Published: 2026-01-30T14:00:00+00:00
-Tags: white matter, connectivity, brain mapping
-
-Explores associations of white matter with cortical connectivity, providing insights into brain structure-function relationships.
-
-<details>
-<summary>RSS summary</summary>
-
-<p>by Youngeun Hwang, Raul Rodriguez-Cruces, Jordan DeKraker, Donna Gift Cabalo, Ilana R. Leppert, Risavarshni Thevakumaran, Christine L. Tardif, David A. Rudko, Casey Paquola, Pierre-Louis Bazin, Andrea Bernasconi, Neda Bernasconi, Luis Concha, Alan C. Evans, Boris C. Bernhardt</p> The superficial white matter (SWM), immediately beneath the cortical mantle, is thought to play a major role in cortico-cortical connectivity as well as large-scale brain function. Yet, this compartment remains rarel…
+<p>Nature, Published online: 04 February 2026; <a href="https://www.nature.com/articles/d41586-026-00358-6">doi:10.1038/d41586-026-00358-6</a></p>In mice, the treatment selectively targets tumour cells without suppressing the immune system.
 
 </details>
 
@@ -257,11 +43,11 @@ Explores associations of white matter with cortical connectivity, providing insi
 
 ## [Caudal Granular Insular Cortex to Somatosensory Cortex I: A Critical Pathway for the Transition of Acute to Chronic Pain](http://www.jneurosci.org/cgi/content/short/46/5/e1306252025?rss=1)
 *Journal of Neuroscience current issue*  
-Score: **0.80**  
+Score: **0.90**  
 Published: 2026-02-04T17:30:29+00:00
-Tags: pain, neuropathic, chronic, CGIC
+Tags: pain, neurophysiology, insular cortex
 
-Focuses on neuropathic pain chronification, vital for pain management and modeling pain pathways in neuroscience.
+This study focuses on the role of the caudal granular insular cortex, providing insights into pain chronification mechanisms, relevant in neurophysiological research.
 
 <details>
 <summary>RSS summary</summary>
@@ -272,215 +58,334 @@ Focuses on neuropathic pain chronification, vital for pain management and modeli
 
 ---
 
-## [Facial expression recognition via variational inference](https://www.nature.com/articles/s41598-026-38734-x)
-*Scientific Reports*  
+## [How tumours trick the brain into shutting down cancer-fighting cells](https://www.nature.com/articles/d41586-026-00338-w)
+*Nature*  
+Score: **0.90**  
+Published: 2026-02-04T00:00:00+00:00
+Tags: cancer, neuroscience, immune system
+
+The study reveals how lung cancer hijacks neurons to suppress the immune system, providing insights into tumor and brain interactions.
+
+<details>
+<summary>RSS summary</summary>
+
+<p>Nature, Published online: 04 February 2026; <a href="https://www.nature.com/articles/d41586-026-00338-w">doi:10.1038/d41586-026-00338-w</a></p>Lung cancer in mice hijacks neurons to send a signal that subdues the immune system, study finds.
+
+</details>
+
+---
+
+## [A mesoscale optogenetics system for precise and robust stimulation of the primate cortex](https://www.cell.com/neuron/fulltext/S0896-6273(25)00928-6?rss=yes)
+*Neuron*  
+Score: **0.90**  
+Published: 2026-02-03T00:00:00+00:00
+Tags: optogenetics, neuromodulation, brain-computer interfaces
+
+This article introduces a cutting-edge optogenetic system that offers substantial advancements in neuromodulation techniques, which are crucial for developing brain-computer interfaces.
+
+<details>
+<summary>RSS summary</summary>
+
+Li et al. present a microLED-based mesoscale optogenetic system for centimeter-scale, million-pixel primate cortical stimulation. Optogenetically evoked saccades with accurate retinotopic organization remain stable for over a year, demonstrating precise, robust, and durable neuromodulation and charting a path toward next-generation optical brain-computer interfaces and visual prostheses.
+
+</details>
+
+---
+
+## [Single Plaque Proteomics Reveals the Composition and Dynamics of the Amyloid Microenvironment in Alzheimer's Disease](https://www.biorxiv.org/content/10.64898/2026.02.02.703320v1?rss=1)
+*bioRxiv Subject Collection: Neuroscience*  
+Score: **0.88**  
+Published: 2026-02-04T00:00:00+00:00
+Tags: Alzheimer's, proteomics, amyloid
+
+Provides insights into the molecular composition of amyloid plaques in Alzheimer's, which could aid in targeted therapies.
+
+<details>
+<summary>RSS summary</summary>
+
+Alzheimer's disease (AD) is characterized by amyloid plaques that form complex microenvironments in the brain.. However, the molecular composition of these plaques and their temporal regulation are not well defined. Here, we developed a sensitive workflow for quantitative proteomic profiling of single plaques using refined laser capture microdissection and data-independent acquisition mass spectrometry (LCM-DIA-MS). From >200 plaques and control regions in AD mouse models (5xFAD and APP-KI) and …
+
+</details>
+
+---
+
+## [Cell type-resolved proteomics reveals intra- and intercellular signalingin Alzheimer's disease](https://www.biorxiv.org/content/10.64898/2026.02.02.703357v1?rss=1)
+*bioRxiv Subject Collection: Neuroscience*  
+Score: **0.87**  
+Published: 2026-02-04T00:00:00+00:00
+Tags: Alzheimer's, proteomics, cell signaling
+
+The research explores cell-specific proteomic changes in Alzheimer's, highlighting differentially abundant proteins across brain cell types.
+
+<details>
+<summary>RSS summary</summary>
+
+Alzheimers disease (AD) arises from pathological interactions among diverse brain cell types, but cell-specific proteomic changes remain underexplored. Here, we present deep proteomic profiling of sorted or proximity-labeled brain cells from AD mouse models (5xFAD and AppNL-G-F) at multiple ages, quantifying 13,411 proteins in microglia (three subtypes), astrocytes, oligodendrocyte precursor cells, and neurons. We identified 3,028 differentially abundant proteins across these cell types, the maj…
+
+</details>
+
+---
+
+## [Chromatin accessibility and transcriptome in human neuronal model exposed to Parkinson’s environmental toxins](https://www.nature.com/articles/s41597-026-06626-4)
+*Scientific Data*  
+Score: **0.85**  
+Published: 2026-02-05T00:00:00+00:00
+Tags: epigenetics, Parkinson's, toxins
+
+This paper investigates epigenetic changes and gene expression in Parkinson’s disease models, which is crucial for understanding neurodegenerative processes.
+
+<details>
+<summary>RSS summary</summary>
+
+<p>Scientific Data, Published online: 05 February 2026; <a href="https://www.nature.com/articles/s41597-026-06626-4">doi:10.1038/s41597-026-06626-4</a></p>Chromatin accessibility and transcriptome in human neuronal model exposed to Parkinson’s environmental toxins
+
+</details>
+
+---
+
+## [Deep Learning Reveals Cross-Modal Neural Representations of Auditory and Visual Mental Imagery in MEG](https://www.biorxiv.org/content/10.64898/2026.02.02.703195v1?rss=1)
+*bioRxiv Subject Collection: Neuroscience*  
+Score: **0.85**  
+Published: 2026-02-04T00:00:00+00:00
+Tags: MEG, deep learning, BCI
+
+Uses deep learning to decode neural processes related to mental imagery, advancing BCI research.
+
+<details>
+<summary>RSS summary</summary>
+
+Mental imagery provides a unique window into the brain's ability to internally simulate sensory experiences, offering valuable insights for both cognitive neuroscience and brain-computer interface (BCI) research. This study examined the neural representations of imagined auditory and visual stimuli using magnetoencephalography (MEG) and assessed the ability of machine learning models to decode these mental processes. MEG data were recorded from 18 right-handed participants during auditory and vi…
+
+</details>
+
+---
+
+## [Open-source AI tool beats giant LLMs in literature reviews — and gets citations right](https://www.nature.com/articles/d41586-026-00347-9)
+*Nature*  
+Score: **0.85**  
+Published: 2026-02-04T00:00:00+00:00
+Tags: AI, literature review, citations
+
+This highlights an AI tool that outperforms large language models in literature reviews by ensuring citation accuracy, beneficial for research integrity.
+
+<details>
+<summary>RSS summary</summary>
+
+<p>Nature, Published online: 04 February 2026; <a href="https://www.nature.com/articles/d41586-026-00347-9">doi:10.1038/d41586-026-00347-9</a></p>Researchers can deploy the cheap and transparent model on their own computer system.
+
+</details>
+
+---
+
+## [Precision targeting of the SASP in cancer therapy](https://www.nature.com/articles/s43587-025-01052-4)
+*Nature Aging*  
+Score: **0.85**  
+Published: 2026-02-03T00:00:00+00:00
+Tags: cancer, SASP, TGFβ, therapeutics
+
+Explores TGFβ signaling as a therapeutic target in cancer, addressing senescence's dual role in tumor dynamics.
+
+<details>
+<summary>RSS summary</summary>
+
+<p>Nature Aging, Published online: 03 February 2026; <a href="https://www.nature.com/articles/s43587-025-01052-4">doi:10.1038/s43587-025-01052-4</a></p>Senescence is a double-edged sword in cancer therapy, capable of driving tumor-promoting and tumor-suppressive responses. In this issue of Nature Aging, González-Gualda, Reinius and colleagues identify activation of TGFβ signaling as the key protumorigenic activity and a viable therapeutic target within the senescence program triggered by platinu…
+
+</details>
+
+---
+
+## [Biofluid biomarkers in Alzheimer’s disease and other neurodegenerative dementias](https://www.nature.com/articles/s41586-025-10018-w)
+*Nature*  
+Score: **0.82**  
+Published: 2026-02-04T00:00:00+00:00
+Tags: biomarkers, Alzheimer's, dementia
+
+Highlights new technologies for detecting biomarkers in neurodegenerative diseases, potentially improving diagnosis and monitoring.
+
+---
+
+## [Behavioral and electroencephalographic dataset simultaneously acquired during the Iowa gambling task](https://www.nature.com/articles/s41597-026-06662-0)
+*Scientific Data*  
 Score: **0.80**  
 Published: 2026-02-05T00:00:00+00:00
-Tags: facial recognition, AI, variational inference
+Tags: EEG, behavioral data, cognition
 
-Investigates methods of facial expression recognition, useful for advances in computer vision and AI.
+The study provides simultaneous EEG and behavioral data, valuable for cognitive and decision-making research.
 
 <details>
 <summary>RSS summary</summary>
 
-<p>Scientific Reports, Published online: 05 February 2026; <a href="https://www.nature.com/articles/s41598-026-38734-x">doi:10.1038/s41598-026-38734-x</a></p>Facial expression recognition via variational inference
+<p>Scientific Data, Published online: 05 February 2026; <a href="https://www.nature.com/articles/s41597-026-06662-0">doi:10.1038/s41597-026-06662-0</a></p>Behavioral and electroencephalographic dataset simultaneously acquired during the Iowa gambling task
 
 </details>
 
 ---
 
-## [C9orf72 hexanucleotide repeat RNA drives transcriptional dysregulation through genome-wide DNA:RNA hybrid G-quadruplexes](https://www.cell.com/neuron/fulltext/S0896-6273(25)00932-8?rss=yes)
-*Neuron*  
+## [Machine learning slashes the testing needed to work out battery lifetimes](https://www.nature.com/articles/d41586-026-00168-w)
+*Nature*  
 Score: **0.80**  
 Published: 2026-02-04T00:00:00+00:00
-Tags: RNA, neurodegeneration, ALS, FTD
+Tags: machine learning, battery, technology
 
-The study elucidates a mechanism of neurodegeneration linking C9orf72 repeats to transcriptional dysregulation, pertinent for understanding ALS and FTD.
+A machine-learning method reduces testing time for battery lifetimes, addressing key challenges in battery technology development.
 
 <details>
 <summary>RSS summary</summary>
 
-Liu et al. demonstrate that expanded C9orf72 G4C2 repeat RNAs bind gene promoters across the genome and form HQ structures with DNA. These structures obstruct key transcription machinery, repress gene expression, and heighten neuronal vulnerability, providing mechanistic insights into neurodegeneration in ALS and FTD.
+<p>Nature, Published online: 04 February 2026; <a href="https://www.nature.com/articles/d41586-026-00168-w">doi:10.1038/d41586-026-00168-w</a></p>A machine-learning method that reasons and adapts has been developed to solve one of the most time-consuming bottlenecks in battery development.
 
 </details>
 
 ---
 
-## [Accurate plasmid reconstruction from metagenomics data using assembly–alignment graphs and contrastive learning](https://www.nature.com/articles/s41587-026-03005-7)
-*Nature Biotechnology*  
+## [Aging clocks delineate neuron types vulnerable or resilient to neurodegeneration and identify neuroprotective interventions](https://www.nature.com/articles/s43587-026-01067-5)
+*Nature Aging*  
 Score: **0.80**  
-Published: 2026-02-04T00:00:00+00:00
-Tags: metagenomics, genetics, AI
-
-Discusses advancements in metagenomic data processing using contrastive learning, enhancing genetic analysis.
-
-<details>
-<summary>RSS summary</summary>
-
-<p>Nature Biotechnology, Published online: 04 February 2026; <a href="https://www.nature.com/articles/s41587-026-03005-7">doi:10.1038/s41587-026-03005-7</a></p>PlasMAAG uses cross-sample information to improve plasmid reconstruction from metagenomic samples.
-
-</details>
-
----
-
-## [The CspC:CspA heterodimer transduces germinant and co-germinant signals during <i>Clostridioides difficile</i> spore germination](https://journals.plos.org/plosbiology/article?id=10.1371/journal.pbio.3003610)
-*PLOS Biology*  
-Score: **0.80**  
-Published: 2026-02-02T14:00:00+00:00
-Tags: C. difficile, spore germination, molecular biology
-
-Identifies molecular mechanisms in C. difficile spore germination, which could aid in tackling infections.
-
-<details>
-<summary>RSS summary</summary>
-
-<p>by Morgan E. McNellis, Gonzalo González-Del Pino, Juan A. Serrano-Jiménez, Emily R. Forster, A. Ioana Stoica, Ekaterina E. Heldwein, Aimee Shen</p> The clinically significant pathogen <i>Clostridioides difficile</i> lacks the transmembrane nutrient germinant receptors conserved in almost all spore-forming bacteria. Instead, <i>C. difficile</i> initiates spore germination using a unique mechanism that requires two signals: a bile acid germinant and a co-germinant, which can be either an amino …
-
-</details>
-
----
-
-## [Neurochemical and Neurophysiological Effects of Intravenous Administration of N,N-Dimethyltryptamine in Rats](http://www.jneurosci.org/cgi/content/short/46/5/e0742242025?rss=1)
-*Journal of Neuroscience current issue*  
-Score: **0.75**  
-Published: 2026-02-04T17:30:28+00:00
-Tags: DMT, psychedelic, neurochemistry
-
-Investigates DMT's effects, contributing to understanding its potential therapeutic roles and neurochemical impact.
-
-<details>
-<summary>RSS summary</summary>
-
-<p><i>N</i>,<i>N</i>-Dimethyltryptamine (DMT) is a serotonergic psychedelic that is being investigated for the treatment of psychiatric disorders. Although the neurophysiological effects of DMT in humans are well characterized, similar studies in animal models and data on the neurochemical effects of DMT are generally lacking, which are critical for a mechanistic understanding. Here, we combined behavioral analysis, high-density (32-channel) electroencephalography, and ultrahigh-performance liqu…
-
-</details>
-
----
-
-## [A neural circuit framework for economic choice: From building blocks of valuation to compositionality in multitasking](https://www.cell.com/neuron/fulltext/S0896-6273(25)00937-7?rss=yes)
-*Neuron*  
-Score: **0.75**  
-Published: 2026-02-04T00:00:00+00:00
-Tags: neural circuits, decision-making, RNN
-
-This framework utilizing RNNs presents a novel approach to understanding the neural basis of decision-making and multitasking, crucial for cognitive neuroscience.
-
-<details>
-<summary>RSS summary</summary>
-
-Battista et al. use biologically plausible RNNs to uncover the circuit mechanisms of economic choice. They propose a two-stage framework where feedforward inputs compute offer values and recurrent inhibition drives comparison. This architecture explains how the brain generalizes preferences and multitasks using compositional neural codes, offering a unified theory of decision-making.
-
-</details>
-
----
-
-## [BiCLUM: Bilateral contrastive learning for unpaired single-cell multi-omics integration](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1013932)
-*PLOS Computational Biology*  
-Score: **0.75**  
-Published: 2026-02-03T14:00:00+00:00
-Tags: single-cell, multi-omics, AI
-
-Explores advanced algorithms for integrating multi-omics data, aiding in complex biological system analyses.
-
-<details>
-<summary>RSS summary</summary>
-
-<p>by Yin Guo, Izaskun Mallona, Mark D. Robinson, Limin Li</p> The integration of single-cell multi-omics data provides a powerful approach for understanding the complex interplay between different molecular modalities, such as RNA expression, chromatin accessibility and protein abundance, measured through assays like scRNA-seq, scATAC-seq and CITE-seq, at single-cell resolution. However, most existing single-cell technologies focus on individual modalities, limiting a comprehensive understandin…
-
-</details>
-
----
-
-## [Altered Structural Plasticity Mediated by mGlu and NMDA Receptors and Impaired Cognition in a Genetic ASD Model (Shank3+/- Mice)](http://www.jneurosci.org/cgi/content/short/46/5/e0791252025?rss=1)
-*Journal of Neuroscience current issue*  
-Score: **0.70**  
-Published: 2026-02-04T17:30:28+00:00
-Tags: ASD, plasticity, NMDA, mGlu
-
-Discusses structural plasticity in relation to ASD, important for insights into neurodevelopmental disorders.
-
-<details>
-<summary>RSS summary</summary>
-
-<p>Dendritic spine morphology is strongly associated with neurodevelopmental disorders. Synaptic plasticity alters spine volume, a phenomenon known as structural plasticity, which influences information processing within neuronal circuits. Structural changes at dendritic spines are linked to autism spectrum disorders, particularly those involving gene mutations that result in synaptopathy. Loss of a single copy of the <i>Shank3</i> gene leads to Phelan&ndash;McDermid syndrome, a synaptopathy, as…
-
-</details>
-
----
-
-## [Kras G12C– and G12D–driven lung cancers differ in oncogenic potency, immunogenicity, and relapse after Kras inhibition in mouse models](https://www.science.org/doi/abs/10.1126/scitranslmed.adq6647?af=R)
-*AAAS: Science Translational Medicine: Table of Contents*  
-Score: **0.70**  
-Published: 2026-02-04T08:00:00+00:00
-Tags: cancer, Kras, oncogenic
-
-Highlights differences in mutations affecting lung cancer treatment strategies, critical for cancer research.
-
-<details>
-<summary>RSS summary</summary>
-
-Science Translational Medicine, Volume 18, Issue 835, February 2026. <br />
-
-</details>
-
----
-
-## [Enhanced Ba2+-sensitive inward rectifying potassium conductance reduces intrinsic excitability of layer 2/3 pyramidal neurons in the primary auditory cortex of Fmr1 knockout mice](https://www.biorxiv.org/content/10.64898/2026.02.03.703439v1?rss=1)
-*bioRxiv Subject Collection: Neuroscience*  
-Score: **0.70**  
-Published: 2026-02-04T00:00:00+00:00
-Tags: auditory cortex, FXS, neural excitability
-
-Investigates molecular mechanisms underlying auditory hypersensitivity relevant to Fragile X syndrome, a significant focus in neurodevelopmental disorder research.
-
-<details>
-<summary>RSS summary</summary>
-
-Fragile X syndrome (FXS) is frequently associated with auditory hypersensitivity and altered cortical processing, yet the intrinsic ionic mechanisms shaping auditory cortex excitability remain incompletely defined. Here, we tested whether subthreshold conductances contribute to compensatory changes in intrinsic excitability in layer 2/3 (L2/3) pyramidal neurons of the primary auditory cortex (AC) in Fmr1 knockout (Fmr1-KO) mice. We performed whole-cell patch-clamp recordings in acute slices from…
-
-</details>
-
----
-
-## [Text-image alignment for ILD imaging: linking CXR evidence to CT quantification](https://www.nature.com/articles/s41746-025-02292-9)
-*npj Digital Medicine*  
-Score: **0.70**  
-Published: 2026-02-04T00:00:00+00:00
-Tags: AI, imaging, lung disease
-
-Combines imaging techniques to better understand interstitial lung diseases, integrating them through novel AI methods.
-
-<details>
-<summary>RSS summary</summary>
-
-<p>npj Digital Medicine, Published online: 04 February 2026; <a href="https://www.nature.com/articles/s41746-025-02292-9">doi:10.1038/s41746-025-02292-9</a></p>Text-image alignment for ILD imaging: linking CXR evidence to CT quantification
-
-</details>
-
----
-
-## [Recovery of Retinal Terminal Fields after Traumatic Brain Injury: Evidence of Collateral Sprouting and Sexual Dimorphism](https://www.jneurosci.org/content/10.4645452025?rss=1)
-*Journal of Neuroscience current issue*  
-Score: **0.65**  
-Published: 2026-02-04T00:00:00+00:00
-Tags: TBI, plasticity, neuroscience
-
-Examines neural recovery, important for understanding brain plasticity post-injury, especially in TBI contexts.
-
----
-
-## [Cell-specific effects of acute sleep deprivation on transcriptomic signatures of non-neuronal cells in the mouse hippocampus and prefrontal cortex](https://www.biorxiv.org/content/10.64898/2026.01.29.702391v1?rss=1)
-*bioRxiv Subject Collection: Neuroscience*  
-Score: **0.65**  
 Published: 2026-02-03T00:00:00+00:00
-Tags: neuroscience, sleep, transcriptomics
+Tags: neurodegeneration, aging, neuroprotective, C. elegans
 
-Examines post-sleep deprivation effects on non-neuronal transcriptomics, broadening our understanding of sleep’s impact.
+This research uses aging clocks to understand neurodegeneration, offering potential pathways to neuroprotective treatments.
 
 <details>
 <summary>RSS summary</summary>
 
-Sleep is essential for maintaining cognitive, emotional, metabolic, and immune functions. Although research on sleep homeostasis is traditionally neuron-centric, increasing evidence indicates non-neuronal cells also play critical roles. In this study, we performed transcriptomic analyses of non-neuronal nuclei from the hippocampus and prefrontal cortex of mice subjected to acute sleep deprivation (SD). We found that acute SD induces robust, cell-type- and region-specific transcriptional reprogra…
+<p>Nature Aging, Published online: 03 February 2026; <a href="https://www.nature.com/articles/s43587-026-01067-5">doi:10.1038/s43587-026-01067-5</a></p>Gallrein et al. pair functional assays with clocks to compare chronological versus biological age of single neuron types in C. elegans, to probe their vulnerability or resilience to neurodegeneration, and use an in silico screen to identify neuroprotective drugs.
+
+</details>
+
+---
+
+## [MediQAl: A French Medical Question Answering Dataset for Knowledge and Reasoning Evaluation](https://www.nature.com/articles/s41597-026-06680-y)
+*Scientific Data*  
+Score: **0.75**  
+Published: 2026-02-05T00:00:00+00:00
+Tags: AI, medical data, question answering
+
+This dataset aids in evaluating AI's understanding of medical knowledge, significant for computational biology and AI research.
+
+<details>
+<summary>RSS summary</summary>
+
+<p>Scientific Data, Published online: 05 February 2026; <a href="https://www.nature.com/articles/s41597-026-06680-y">doi:10.1038/s41597-026-06680-y</a></p>MediQAl: A French Medical Question Answering Dataset for Knowledge and Reasoning Evaluation
+
+</details>
+
+---
+
+## [Risk factors for treatment resistance among women with postpartum depression in a nationwide study](https://www.nature.com/articles/s44220-026-00587-8)
+*Nature Mental Health*  
+Score: **0.75**  
+Published: 2026-02-04T00:00:00+00:00
+Tags: postpartum depression, mental health, risk factors
+
+Identifies prevalence and risk factors for treatment-resistant postpartum depression, crucial for developing effective interventions.
+
+<details>
+<summary>RSS summary</summary>
+
+<p>Nature Mental Health, Published online: 04 February 2026; <a href="https://www.nature.com/articles/s44220-026-00587-8">doi:10.1038/s44220-026-00587-8</a></p>Chen et al. assessed the prevalence and risk factors for treatment-resistant postpartum depression using nationwide data from the Swedish National Medical Birth Register.
+
+</details>
+
+---
+
+## [Trajectory of depression occurrence before, during, and after dementia diagnosis: A population-based study](https://www.nature.com/articles/s41398-026-03817-w)
+*Translational Psychiatry*  
+Score: **0.75**  
+Published: 2026-02-03T00:00:00+00:00
+Tags: depression, dementia, mental health
+
+This study charts the occurrence and progression of depression in relation to dementia, offering insights into mental health management in neurodegenerative diseases.
+
+<details>
+<summary>RSS summary</summary>
+
+<p>Translational Psychiatry, Published online: 03 February 2026; <a href="https://www.nature.com/articles/s41398-026-03817-w">doi:10.1038/s41398-026-03817-w</a></p>Trajectory of depression occurrence before, during, and after dementia diagnosis: A population-based study
+
+</details>
+
+---
+
+## [Attention level assessment by means of HRV data extracted from fNIRS signals](https://www.biorxiv.org/content/10.64898/2026.02.02.703265v1?rss=1)
+*bioRxiv Subject Collection: Neuroscience*  
+Score: **0.70**  
+Published: 2026-02-04T00:00:00+00:00
+Tags: HRV, fNIRS, attention
+
+Combines HRV and fNIRS to assess attention, relevant for studies on cognitive load and brain function.
+
+<details>
+<summary>RSS summary</summary>
+
+Sustained attention is an important requirement for high performance in all cognitive processes. Quantifying the level of sustained attention to prevent attention lapses is therefore necessary for effective human-machine interfacing. Furthermore, sustained attention evaluation can help diagnose and treat attention deficit hyperactivity disorders. Attention level can be assessed by brain and heart signals. This study employed functional near infrared spectroscopy (fNIRS) and the heart rate variab…
+
+</details>
+
+---
+
+## [Resource landscape shapes the composition and stability of the human vaginal microbiota](https://journals.plos.org/plosbiology/article?id=10.1371/journal.pbio.3003575)
+*PLOS Biology*  
+Score: **0.70**  
+Published: 2026-02-03T14:00:00+00:00
+Tags: microbiota, health, ecology
+
+Discusses how resource landscapes influence vaginal microbiota composition, impacting women's health and microbial dynamics.
+
+<details>
+<summary>RSS summary</summary>
+
+<p>by Tsukushi Kamiya, Mircea T. Sofonea, Michael France, Nicolas Tessandier, Ignacio G Bravo, Carmen Lia Murall, Jacques Ravel, Samuel Alizon</p> The vaginal microbiota is associated with the health of women and newborns alike. Despite its comparatively simple composition relative to other human microbiota systems, the mechanisms underpinning the dynamics and stability of vaginal microbial communities remain elusive. A crucial, yet so far underexplored, aspect of vaginal microbiota ecology is t…
+
+</details>
+
+---
+
+## [Intranasal dantrolene nanoparticles inhibit lipopolysaccharide-induced depression and anxiety behavior in mice](https://www.nature.com/articles/s41398-026-03816-x)
+*Translational Psychiatry*  
+Score: **0.70**  
+Published: 2026-02-03T00:00:00+00:00
+Tags: depression, anxiety, nanoparticles, drug delivery
+
+Demonstrates a novel approach for treating depression and anxiety, showcasing the use of nanoparticle drug delivery.
+
+<details>
+<summary>RSS summary</summary>
+
+<p>Translational Psychiatry, Published online: 03 February 2026; <a href="https://www.nature.com/articles/s41398-026-03816-x">doi:10.1038/s41398-026-03816-x</a></p>Intranasal dantrolene nanoparticles inhibit lipopolysaccharide-induced depression and anxiety behavior in mice
+
+</details>
+
+---
+
+## [A method for structural variant detection using Hi-C contact matrix and neural networks](https://www.nature.com/articles/s41598-026-37678-6)
+*Scientific Reports*  
+Score: **0.65**  
+Published: 2026-02-05T00:00:00+00:00
+Tags: genomics, neural networks, Hi-C
+
+Utilizes advanced neural networks for structural variant detection, contributing to genomics and computational biology.
+
+<details>
+<summary>RSS summary</summary>
+
+<p>Scientific Reports, Published online: 05 February 2026; <a href="https://www.nature.com/articles/s41598-026-37678-6">doi:10.1038/s41598-026-37678-6</a></p>A method for structural variant detection using Hi-C contact matrix and neural networks
+
+</details>
+
+---
+
+## [Common genetic variants affect risk of a major cause of pregnancy loss](https://www.nature.com/articles/d41586-026-00024-x)
+*Nature*  
+Score: **0.65**  
+Published: 2026-02-04T00:00:00+00:00
+Tags: genetics, pregnancy, aneuploidy
+
+The study connects genetic variants to pregnancy loss, enhancing understanding of reproductive genetics and potential interventions.
+
+<details>
+<summary>RSS summary</summary>
+
+<p>Nature, Published online: 04 February 2026; <a href="https://www.nature.com/articles/d41586-026-00024-x">doi:10.1038/d41586-026-00024-x</a></p>Genetic data from 139,416 human embryos were used to characterize chromosomal abnormalities, called aneuploidies, that underlie many cases of pregnancy loss. This approach revealed a relationship between aneuploidy and the exchange of DNA between chromosomes during female meiosis and egg formation, and identified common maternal genetic variants associ…
 
 </details>
 
