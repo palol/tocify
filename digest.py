@@ -1,4 +1,5 @@
 import os, re, json, time, math, hashlib
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone, timedelta
 
 import feedparser
@@ -18,6 +19,10 @@ PREFILTER_KEEP_TOP = int(os.getenv("PREFILTER_KEEP_TOP", "200"))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "50"))
 MIN_SCORE_READ = float(os.getenv("MIN_SCORE_READ", "0.65"))
 MAX_RETURNED = int(os.getenv("MAX_RETURNED", "40"))
+
+USE_NEWSPAPER = os.getenv("USE_NEWSPAPER", "0").strip() in ("1", "true", "yes")
+NEWSPAPER_MAX_ITEMS = int(os.getenv("NEWSPAPER_MAX_ITEMS", "100"))
+NEWSPAPER_TIMEOUT = int(os.getenv("NEWSPAPER_TIMEOUT", "10"))
 
 SCHEMA = {
     "type": "object",
@@ -167,6 +172,39 @@ def fetch_rss_items(feeds: list[dict]) -> list[dict]:
     return items[:MAX_TOTAL_ITEMS]
 
 
+# ---- newspaper (optional enrichment) ----
+def enrich_item_with_newspaper(item: dict, timeout: int) -> dict:
+    """
+    Fetch article at item["link"] and replace item["summary"] with extracted text
+    (truncated to SUMMARY_MAX_CHARS). On failure or timeout, return item unchanged.
+    """
+    link = (item.get("link") or "").strip()
+    if not link:
+        return item
+
+    def download_and_parse():
+        from newspaper import Article
+        article = Article(link)
+        article.download()
+        article.parse()
+        return article.text or ""
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as ex:
+            fut = ex.submit(download_and_parse)
+            text = fut.result(timeout=timeout)
+    except (FuturesTimeoutError, Exception):
+        return item
+
+    text = re.sub(r"\s+", " ", (text or "").strip())
+    if not text:
+        return item
+    if len(text) > SUMMARY_MAX_CHARS:
+        text = text[:SUMMARY_MAX_CHARS] + "…"
+    item["summary"] = text
+    return item
+
+
 # ---- local prefilter ----
 def keyword_prefilter(items: list[dict], keywords: list[str], keep_top: int) -> list[dict]:
     kws = [k.lower() for k in keywords if k.strip()]
@@ -306,6 +344,17 @@ def main():
 
     items = keyword_prefilter(items, interests["keywords"], keep_top=PREFILTER_KEEP_TOP)
     print(f"Sending {len(items)} RSS items to model (post-filter)")
+
+    if USE_NEWSPAPER:
+        to_enrich = items[:NEWSPAPER_MAX_ITEMS]
+        print(f"Enriching up to {len(to_enrich)} items with newspaper (timeout={NEWSPAPER_TIMEOUT}s each)")
+        for i, it in enumerate(to_enrich):
+            enrich_item_with_newspaper(it, NEWSPAPER_TIMEOUT)
+            if i < len(to_enrich) - 1:
+                time.sleep(0.2)
+            if (i + 1) % 10 == 0:
+                print(f"  Enriched {i + 1}/{len(to_enrich)}")
+        print("Newspaper enrichment done")
 
     items_by_id = {it["id"]: it for it in items}
     client = make_openai_client()
