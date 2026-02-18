@@ -1,14 +1,13 @@
-import os, re, json, time, math, hashlib
+import os, re, json, time, math, hashlib, subprocess
 from datetime import datetime, timezone, timedelta
 
 import feedparser
-import httpx
 from dateutil import parser as dtparser
-from openai import OpenAI, APITimeoutError, APIConnectionError, RateLimitError
+from dotenv import load_dotenv
 
+load_dotenv()
 
 # ---- config (env-tweakable) ----
-MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 MAX_ITEMS_PER_FEED = int(os.getenv("MAX_ITEMS_PER_FEED", "50"))
 MAX_TOTAL_ITEMS = int(os.getenv("MAX_TOTAL_ITEMS", "400"))
 LOOKBACK_DAYS = int(os.getenv("LOOKBACK_DAYS", "7"))
@@ -19,33 +18,12 @@ BATCH_SIZE = int(os.getenv("BATCH_SIZE", "50"))
 MIN_SCORE_READ = float(os.getenv("MIN_SCORE_READ", "0.65"))
 MAX_RETURNED = int(os.getenv("MAX_RETURNED", "40"))
 
-SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "week_of": {"type": "string"},
-        "notes": {"type": "string"},
-        "ranked": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "id": {"type": "string"},
-                    "title": {"type": "string"},
-                    "link": {"type": "string"},
-                    "source": {"type": "string"},
-                    "published_utc": {"type": ["string", "null"]},
-                    "score": {"type": "number"},
-                    "why": {"type": "string"},
-                    "tags": {"type": "array", "items": {"type": "string"}},
-                },
-                "required": ["id", "title", "link", "source", "published_utc", "score", "why", "tags"],
-            },
-        },
-    },
-    "required": ["week_of", "notes", "ranked"],
-}
+# Cursor CLI: no structured output; append schema + strict JSON instruction to prompt
+CURSOR_PROMPT_SUFFIX = """
+
+Return **only** a single JSON object, no markdown code fences, no commentary. Schema:
+{"week_of": "<ISO date>", "notes": "<string>", "ranked": [{"id": "<string>", "title": "<string>", "link": "<string>", "source": "<string>", "published_utc": "<string|null>", "score": <0-1>, "why": "<string>", "tags": ["<string>"]}]}
+"""
 
 
 # ---- tiny helpers ----
@@ -181,20 +159,19 @@ def keyword_prefilter(items: list[dict], keywords: list[str], keep_top: int) -> 
     return matched[:keep_top]
 
 
-# ---- openai ----
-def make_openai_client() -> OpenAI:
-    key = os.environ.get("OPENAI_API_KEY", "").strip()
-    if not key.startswith("sk-"):
-        raise RuntimeError("OPENAI_API_KEY missing/invalid (expected to start with 'sk-').")
-    http_client = httpx.Client(
-        timeout=httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0),
-        http2=False,
-        trust_env=False,
-        headers={"Connection": "close", "Accept-Encoding": "gzip"},
-    )
-    return OpenAI(api_key=key, http_client=http_client)
+# ---- cursor ----
+def _cursor_cli() -> str:
+    return os.getenv("TOCIFY_CURSOR_CLI", "cursor").strip() or "cursor"
 
-def call_openai_triage(client: OpenAI, interests: dict, items: list[dict]) -> dict:
+
+def _cursor_api_key() -> str:
+    return (
+        os.environ.get("CURSOR_API_KEY", "").strip()
+        or os.environ.get("TOCIFY_API_KEY", "").strip()
+    )
+
+
+def call_cursor_triage(interests: dict, items: list[dict]) -> dict:
     lean_items = [{
         "id": it["id"],
         "source": it["source"],
@@ -204,8 +181,7 @@ def call_openai_triage(client: OpenAI, interests: dict, items: list[dict]) -> di
         "summary": (it.get("summary") or "")[:SUMMARY_MAX_CHARS],
     } for it in items]
 
-    template = load_prompt_template()
-
+    template = load_prompt_template() + CURSOR_PROMPT_SUFFIX
     prompt = (
         template
         .replace("{{KEYWORDS}}", json.dumps(interests["keywords"], ensure_ascii=False))
@@ -213,21 +189,37 @@ def call_openai_triage(client: OpenAI, interests: dict, items: list[dict]) -> di
         .replace("{{ITEMS}}", json.dumps(lean_items, ensure_ascii=False))
     )
 
+    cli = _cursor_cli()
     last = None
+    result = None
     for attempt in range(6):
         try:
-            resp = client.responses.create(
-                model=MODEL,
-                input=prompt,
-                text={"format": {"type": "json_schema", "name": "weekly_toc_digest", "schema": SCHEMA, "strict": True}},
+            result = subprocess.run(
+                [cli, "-p", "--output-format", "text", prompt],
+                capture_output=True,
+                text=True,
+                env=os.environ,
             )
-            return json.loads(resp.output_text)
-        except (APITimeoutError, APIConnectionError, RateLimitError) as e:
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"cursor CLI exit {result.returncode}: {result.stderr or result.stdout or 'no output'}"
+                )
+            response_text = (result.stdout or "").strip()
+            start = response_text.find("{")
+            end = response_text.rfind("}") + 1
+            if start < 0 or end <= start:
+                raise ValueError("No JSON object found in Cursor output")
+            parsed = json.loads(response_text[start:end])
+            if not isinstance(parsed, dict) or "ranked" not in parsed:
+                raise ValueError("Cursor output missing required 'ranked' field")
+            return parsed
+        except (ValueError, json.JSONDecodeError, RuntimeError) as e:
             last = e
             time.sleep(min(60, 2 ** attempt))
     raise last
 
-def triage_in_batches(client: OpenAI, interests: dict, items: list[dict], batch_size: int) -> dict:
+
+def triage_in_batches(interests: dict, items: list[dict], batch_size: int) -> dict:
     week_of = datetime.now(timezone.utc).date().isoformat()
     total = math.ceil(len(items) / batch_size)
     all_ranked, notes_parts = [], []
@@ -235,7 +227,7 @@ def triage_in_batches(client: OpenAI, interests: dict, items: list[dict], batch_
     for i in range(0, len(items), batch_size):
         batch = items[i:i + batch_size]
         print(f"Triage batch {i // batch_size + 1}/{total} ({len(batch)} items)")
-        res = call_openai_triage(client, interests, batch)
+        res = call_cursor_triage(interests, batch)
         if res.get("notes", "").strip():
             notes_parts.append(res["notes"].strip())
         all_ranked.extend(res.get("ranked", []))
@@ -308,9 +300,12 @@ def main():
     print(f"Sending {len(items)} RSS items to model (post-filter)")
 
     items_by_id = {it["id"]: it for it in items}
-    client = make_openai_client()
 
-    result = triage_in_batches(client, interests, items, batch_size=BATCH_SIZE)
+    if not _cursor_api_key():
+        raise RuntimeError(
+            "CURSOR_API_KEY or TOCIFY_API_KEY must be set (get key from Cursor settings)."
+        )
+    result = triage_in_batches(interests, items, BATCH_SIZE)
     md = render_digest_md(result, items_by_id)
 
     with open("digest.md", "w", encoding="utf-8") as f:
