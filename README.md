@@ -1,9 +1,9 @@
-# tocify — Weekly Journal ToC Digest (RSS → OpenAI → `digest.md`)
+# tocify — Weekly Journal ToC Digest (RSS → Cursor → `digest.md`)
 
 This repo runs a GitHub Action once a week (or on-demand) that:
 
 1. pulls new items from a list of journal RSS feeds  
-2. uses OpenAI to triage which items match your research interests  
+2. uses the Cursor CLI to triage which items match your research interests  
 3. writes a ranked digest to `digest.md` and commits it back to the repo
 
 It’s meant to be forked and customized.
@@ -14,7 +14,7 @@ This was almost entirely vibe-coded as an exercise (I'm pleased at how well it w
 
 ## What’s in this repo
 
-- **`digest.py`** — the pipeline (fetch RSS → filter → OpenAI triage → render markdown)
+- **`digest.py`** — the pipeline (fetch RSS → filter → Cursor triage → render markdown)
 - **`feeds.txt`** — RSS feed list (supports comments; optionally supports `Name | URL`)
 - **`interests.md`** — your keywords + narrative seed (used for relevance)
 - **`prompt.txt`** — the prompt template (easy to tune without editing Python)
@@ -29,27 +29,21 @@ This was almost entirely vibe-coded as an exercise (I'm pleased at how well it w
 ### 1) Fork the repo
 - Click **Fork** on GitHub to copy this repo into your account.
 
-### 2) Enable OpenAI billing / credits
-The OpenAI API requires an active billing setup or credits.
-- Go to the OpenAI Platform and ensure billing is enabled and/or credits are available.
-- If you see errors like `insufficient_quota` or `You exceeded your current quota`, this is the cause.
-- I recommend putting in spending limits. This uses very little compute, but it's nice to be careful.
-
-### 3) Create an OpenAI API key
-Create an API key in the OpenAI Platform and copy it.
+### 2) Cursor CLI and API key
+Ensure the **Cursor CLI** (`cursor` or `agent`) is installed and on `PATH` where the digest runs (e.g. your machine for local runs; for GitHub Actions you must use a runner or step that provides it). Get your API key from Cursor settings.
 
 **Important:** never commit this key to the repo.
 
-### 4) Add the API key as a GitHub Actions secret
+### 3) Add the API key as a GitHub Actions secret
 In your forked repo:
 - Go to **Settings → Secrets and variables → Actions**
 - Click **New repository secret**
-- Name: `OPENAI_API_KEY`
-- Value: paste your OpenAI API key
+- Name: `CURSOR_API_KEY`
+- Value: paste your Cursor API key
 
-That’s it—GitHub will inject it into the workflow at runtime.
+GitHub will inject it into the workflow at runtime.
 
-### 5) Configure your feeds
+### 4) Configure your feeds
 Edit **`feeds.txt`**.
 
 You can use comments:
