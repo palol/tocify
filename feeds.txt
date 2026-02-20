@@ -1,62 +1,77 @@
-# general journals
-Nature | http://www.nature.com/nature/current_issue/rss
-Scientific Reports | https://www.nature.com/srep.rss
-Science | https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=science
-Science Advances | https://www.science.org/content/page/email-alerts-and-rss-feeds#:~:text=Advances%C2%A0Feed
-PNAS | http://www.pnas.org/rss/Neuroscience.xml
-PNAS | http://www.pnas.org/rss/Psychological_and_Cognitive_Sciences.xml
+# BCI RSS Feed Collection (from bci_rss_feeds.yaml)
+# Format: Name | URL
 
-# neuroscience journals
-bioRxiv | http://connect.biorxiv.org/biorxiv_xml.php?subject=neuroscience
-Nature Neuroscience | https://www.nature.com/neuro.rss
-Nature Human Behav | https://www.nature.com/nathumbehav.rss
-Nature Aging | https://www.nature.com/nataging.rss
-Neuron | https://www.cell.com/neuron/rss
-J Neurosci | https://www.jneurosci.org/rss/current.xml
-Neuron | http://www.cell.com/neuron/inpress.rss
-Cerebral Cortex | http://cercor.oxfordjournals.org/rss/current.xml
-J Cogn Neurosci | https://ieeexplore.ieee.org/rss/TOC6720218.XML
-NeuroImage | http://www.journals.elsevier.com/neuroimage/rss
+# newsletter
+Neurotech Futures | https://neurotechnology.substack.com/feed
 
-# biology journals
-Cell | https://www.cell.com/cell/current.rss
-eLife | https://elifesciences.org/rss/subject/neuroscience.xml
-PLOS Biol | https://journals.plos.org/plosbiology/feed/atom
-PLOS Comp Bio | https://journals.plos.org/ploscompbiol/rss
-Nature Biotechnology | https://www.nature.com/nbt.rss
+# journal
+Journal of Neural Engineering | http://iopscience.iop.org/journal/rss/1741-2552
+Nature Neuroscience | http://feeds.nature.com/neuro/rss/current
+Frontiers in Neuroscience | https://www.frontiersin.org/journals/neuroscience/rss
+Frontiers in Neurorobotics | https://www.frontiersin.org/journals/neurorobotics/rss
+Frontiers in Human Neuroscience | https://www.frontiersin.org/journals/human-neuroscience/rss
+Frontiers in Computational Neuroscience | https://www.frontiersin.org/journals/computational-neuroscience/rss
+IEEE Transactions on Biomedical Engineering | https://ieeexplore.ieee.org/rss/TOC10.XML
+IEEE Reviews in Biomedical Engineering | https://ieeexplore.ieee.org/rss/TOC4664312.XML
+Neuron (Cell Press) | https://www.cell.com/neuron/current.rss
+Nature Neuroscience (Subject Feed) | https://www.nature.com/subjects/neuroscience.rss
+Nature BMI Subject Feed | https://www.nature.com/subjects/brain-machine-interface.rss
+Frontiers in Neuroinformatics | https://www.frontiersin.org/journals/neuroinformatics/rss
+JAMA Neurology | https://jamanetwork.com/rss/site_16/67.xml
+Journal of Neuroscience (Current Issue) | http://www.jneurosci.org/rss/current.xml
+NeuroImage (ScienceDirect) | https://rss.sciencedirect.com/publication/science/10538119
+Journal of Neuroscience Methods (ScienceDirect) | https://rss.sciencedirect.com/publication/science/01650270_OA/open-access
+Brain Research (ScienceDirect) | http://rss.sciencedirect.com/publication/science/00068993
+Clinical Neurophysiology (Elsevier) | https://www.journals.elsevier.com/clinical-neurophysiology/rss
+PNAS Neuroscience | http://feeds.feedburner.com/ProceedingsOfTheNationalAcademyOfSciencesNeuroscience
+IEEE Transactions on Haptics | https://ieeexplore.ieee.org/rss/TOC4543165.XML
+NEJM Neurology/Neurosurgery | https://search.nejm.org/search?cnt=20&start_month=12&start_year=2008&w=*&restrict=doctype%3Aarticle&srt=0&isort=date&ts=rss&af=topic:1
 
-# AI/ML journals
-Nature Comput Sci | https://www.nature.com/natcomputsci.rss
-Nature Machine Intell | https://www.nature.com/natmachintell.rss
+# preprint
+bioRxiv Neuroscience | http://connect.biorxiv.org/biorxiv_xml.php?subject=neuroscience
+arXiv Neurons and Cognition (q-bio.NC) | http://export.arxiv.org/rss/q-bio.NC
+arXiv Human-Computer Interaction (cs.HC) | http://export.arxiv.org/rss/cs.HC
+arXiv Signal Processing (eess.SP) | http://export.arxiv.org/rss/eess.SP
+arXiv Neural and Evolutionary Computing (cs.NE) | http://export.arxiv.org/rss/cs.NE
 
-# clinical journals
-JAMA | https://jamanetwork.com/rss/site_3/67.xml
-JAMA Network Open | https://jamanetwork.com/rss/site_214/187.xml
-JAMA Neurol | https://jamanetwork.com/rss/site_16/72.xml
-JAMA Psychiatry | https://jamanetwork.com/rss/site_14/70.xml
-JAMA Cardiol | https://jamanetwork.com/rss/site_192/184.xml
-JAMA Pediatrics | https://jamanetwork.com/rss/site_19/75.xml
-Lancet | http://www.thelancet.com/rssfeed/lancet_current.xml
-Lancet Digital Health | http://www.thelancet.com/rssfeed/laneur_current.xml
-Lancet Neurol | http://www.thelancet.com/rssfeed/landig_current.xml
-Lancet Psychiatry | http://www.thelancet.com/rssfeed/lanpsy_current.xml
-Nature Medicine | http://www.nature.com/nm/current_issue/rss/
-Nature Mental Health | https://www.nature.com/natmentalhealth.rss
-npj Digital Health | https://www.nature.com/npjdigipubhealth.rss
-npj Digital Med | https://www.nature.com/npjdigitalmed.rss
-Trans Psychiatry | https://www.nature.com/tp.rss
+# pubmed
+PubMed: Brain-Computer Interface | https://eutils.ncbi.nlm.nih.gov/entrez/eutils/erss.cgi?rss_guid=1rSUu--tbw4049Wgf_RdKXdtNCvGW0lVBZFpHe7zAN4k4DwoD5
+PubMed: fNIRS | https://eutils.ncbi.nlm.nih.gov/entrez/eutils/erss.cgi?rss_guid=1JKSd2KF3MGnV7oFVD2g6PNu7rHRFDsLyCNjKkkf4KHBUA3c8P
+PubMed: tDCS/tACS/tRNS | https://eutils.ncbi.nlm.nih.gov/entrez/eutils/erss.cgi?rss_guid=143rKCPgMwbasrj66gQ1r1ebioUg42SIGRyVKSoW4m6X-ecQ00
 
-# methods and data journals
-Nature Methods | http://www.nature.com/nmeth/current_issue/rss
-Nature Protocols | http://www.nature.com/nprot/current_issue/rss/index.html
-Scientific Data | https://www.nature.com/sdata.rss
+# ieee
+IEEE Brain Initiative | https://brain.ieee.org/feed/
+IEEE Life Sciences | https://lifesciences.ieee.org/feed/
+IEEE Spectrum - Biomedical | https://spectrum.ieee.org/feeds/topic/biomedical
+Engineering in Medicine and Biology Society | https://www.embs.org/feed/
 
-# review journals
-Trends Cogn Sci | http://www.cell.com/trends/cognitive-sciences/inpress.rss
-Trends Neurosci | https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=stm
-Behav Brain Sci | http://cambridge.org/core/rss/product/id/33B3051C485F2A27AC91F4A9BA87E6A6
-Nature Rev Neurosci | https://www.nature.com/nrn.rss
-Nature Rev Psychol | https://www.nature.com/nrpsychol.rss
-Nature Rev Neurol | https://www.nature.com/nrneurol.rss
-Nature Rev Biotech | https://www.nature.com/natrevbioeng.rss
-Nature Rev Cardiol | https://www.nature.com/nrcardio.rss
+# news
+Neuroscience News Magazine | https://neurosciencenews.com/feed
+MIT News - Neuroscience | https://news.mit.edu/rss/topic/neuroscience
+MIT Technology Review - Biotechnology and Health | https://technologyreview.com/topic/biotechnology-and-health/feed/
+ScienceDaily - Brain-Computer Interfaces | https://www.sciencedaily.com/rss/mind_brain/brain-computer_interfaces.xml
+TechCrunch - Biotech & Health | https://techcrunch.com/category/biotech-health/feed/
+The Transmitter | https://thetransmitter.org/feed
+Medical Xpress - Neuroscience | https://medicalxpress.com/rss-feed/neuroscience/
+Scientific American - Neuroscience | https://rss.sciam.com/ScientificAmerican-Global
+Science News (SN) | https://www.sciencenews.org/feed
+Ars Technica - Science | https://arstechnica.com/science/feed/
+Wired - Science | https://www.wired.com/feed/category/science/latest/rss
+New Scientist | https://www.newscientist.com/feed/home/
+STAT News | https://www.statnews.com/feed/
+SciTechDaily | https://scitechdaily.com/feed/
+McGovern Institute for Brain Research (MIT) | https://mcgovern.mit.edu/news/feed
+Knowing Neurons | https://knowingneurons.com/feed
+MassDevice | https://www.massdevice.com/feed/
+ScienceDaily - Neuroscience | https://www.sciencedaily.com/rss/mind_brain.xml
+NIH NINDS News | https://www.ninds.nih.gov/news-events/news-events.xml
+BrainFacts.org | https://www.brainfacts.org/rss
+
+# company
+Paradromics Insights | https://www.paradromics.com/insights/feed
+Synchron Blog | https://synchron.com/blog/feed
+
+# research
+Sapien Labs | https://sapienlabs.co/feed/
+FENS News | https://www.fens.org/RSS/News/
+Cognitive Neuroscience Society Blog | https://www.cogneurosociety.org/feed
