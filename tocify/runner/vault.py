@@ -2,7 +2,9 @@
 
 import datetime as dt
 import os
+import re
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -116,6 +118,139 @@ def load_monthly_roundups_for_year(
     return [p for _, p in roundups]
 
 
+def _resolve_reference_path(raw_path: str) -> Path:
+    candidate = Path(raw_path.strip()).expanduser()
+    if candidate.is_absolute():
+        return candidate
+
+    vault_candidate = (VAULT_ROOT / candidate).resolve()
+    if vault_candidate.exists():
+        return vault_candidate
+    return candidate.resolve()
+
+
+def _expand_prompt_references(prompt: str) -> tuple[str, list[Path], int]:
+    """Expand lines like '@path/to/file.md' into inline source blocks."""
+    max_files = int(os.environ.get("TOCIFY_PROMPT_REF_MAX_FILES", "200"))
+    max_chars = int(os.environ.get("TOCIFY_PROMPT_REF_MAX_CHARS", "1000000"))
+
+    out_lines: list[str] = []
+    resolved_paths: list[Path] = []
+    total_chars = 0
+
+    for line in prompt.splitlines():
+        stripped = line.strip()
+        match = re.match(r"^@(.+)$", stripped)
+        if not match:
+            out_lines.append(line)
+            continue
+
+        raw_path = match.group(1).strip()
+        path = _resolve_reference_path(raw_path)
+        if not path.exists() or not path.is_file():
+            raise FileNotFoundError(f"Referenced source file not found: {raw_path} -> {path}")
+
+        text = path.read_text(encoding="utf-8")
+        resolved_paths.append(path)
+        total_chars += len(text)
+
+        if len(resolved_paths) > max_files:
+            raise RuntimeError(
+                f"Too many @file references in prompt: {len(resolved_paths)} > {max_files}"
+            )
+        if total_chars > max_chars:
+            raise RuntimeError(
+                f"Referenced prompt content too large: {total_chars} chars > {max_chars}"
+            )
+
+        out_lines.append(f"[BEGIN SOURCE: {path}]")
+        out_lines.append(text)
+        out_lines.append(f"[END SOURCE: {path}]")
+
+    return "\n".join(out_lines), resolved_paths, total_chars
+
+
+def _should_use_openai_backend() -> bool:
+    backend = os.environ.get("TOCIFY_BACKEND", "").strip().lower()
+    if backend == "openai":
+        return True
+    if backend:
+        return False
+    return bool(os.environ.get("OPENAI_API_KEY", "").strip())
+
+
+def _run_openai_and_save_output(
+    prompt: str,
+    output_path: Path,
+    log_path: Path,
+    fallback_content: str,
+    *,
+    model: str | None = None,
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    selected_model = model or os.environ.get("OPENAI_MODEL", "").strip() or "gpt-4o"
+    attempts = 0
+    response_id = ""
+    output_text = ""
+    refs: list[Path] = []
+    ref_chars = 0
+    terminal_error = ""
+
+    try:
+        expanded_prompt, refs, ref_chars = _expand_prompt_references(prompt)
+    except Exception as e:
+        expanded_prompt = ""
+        terminal_error = f"{e.__class__.__name__}: {e}"
+    else:
+        try:
+            from openai import APITimeoutError, APIConnectionError, RateLimitError
+
+            from tocify.integrations.openai_triage import make_openai_client
+
+            client = make_openai_client()
+            for attempt in range(6):
+                attempts = attempt + 1
+                try:
+                    resp = client.responses.create(model=selected_model, input=expanded_prompt)
+                    response_id = getattr(resp, "id", "") or ""
+                    output_text = (getattr(resp, "output_text", "") or "").strip()
+                    if not output_text:
+                        terminal_error = "RuntimeError: Empty output from OpenAI response."
+                    break
+                except (APITimeoutError, APIConnectionError, RateLimitError) as e:
+                    terminal_error = f"{e.__class__.__name__}: {e}"
+                    if attempt < 5:
+                        time.sleep(min(60, 2**attempt))
+                except Exception as e:
+                    terminal_error = f"{e.__class__.__name__}: {e}"
+                    break
+        except Exception as e:
+            terminal_error = f"{e.__class__.__name__}: {e}"
+
+    used_fallback = not bool(output_text)
+    final_output = output_text or fallback_content
+    output_path.write_text(final_output, encoding="utf-8")
+
+    log_lines = [
+        "backend=openai",
+        f"model={selected_model}",
+        f"response_id={response_id or '(none)'}",
+        f"attempts={attempts}",
+        f"expanded_refs={len(refs)}",
+        f"expanded_ref_chars={ref_chars}",
+        f"used_fallback={used_fallback}",
+        f"output_chars={len(final_output)}",
+    ]
+    if terminal_error:
+        log_lines.append(f"terminal_error={terminal_error}")
+    if refs:
+        log_lines.append("ref_paths=")
+        log_lines.extend(str(p) for p in refs)
+    log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+
+
 def run_agent_and_save_output(
     prompt: str,
     output_path: Path,
@@ -124,7 +259,17 @@ def run_agent_and_save_output(
     *,
     model: str | None = None,
 ) -> None:
-    """Run agent with prompt; save output and log."""
+    """Run content generation and save output/log."""
+    if _should_use_openai_backend():
+        _run_openai_and_save_output(
+            prompt,
+            output_path,
+            log_path,
+            fallback_content,
+            model=model,
+        )
+        return
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     mtime_before = output_path.stat().st_mtime if output_path.exists() else 0
