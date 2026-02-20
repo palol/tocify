@@ -513,9 +513,6 @@ def run_weekly(
 
     items_by_id = {it["id"]: it for it in items}
 
-    if not os.environ.get("CURSOR_API_KEY", "").strip():
-        raise RuntimeError("CURSOR_API_KEY must be set.")
-
     os.environ["TOCIFY_PROMPT_PATH"] = str(paths.prompt_path)
     triage_fn = tocify.get_triage_backend()
     result = tocify.triage_in_batches(interests, items, BATCH_SIZE, triage_fn)

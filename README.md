@@ -3,7 +3,7 @@
 This repo runs a GitHub Action once a week (or on-demand) that:
 
 1. pulls new items from a list of journal RSS feeds  
-2. triages items against your research interests (OpenAI API or Cursor CLI)  
+2. triages items against your research interests (OpenAI API, Gemini API, or Cursor CLI)  
 3. writes a ranked digest to `digest.md` and commits it back to the repo
 
 It’s meant to be forked and customized.
@@ -13,10 +13,10 @@ It’s meant to be forked and customized.
 ## What’s in this repo
 
 - **`digest.py`** — pipeline (fetch RSS → filter → triage → render markdown)
-- **`integrations/`** — optional Cursor CLI triage backend (default: in-file OpenAI in digest.py)
+- **`tocify/integrations/`** — triage backends (OpenAI, Gemini, Cursor)
 - **`feeds.txt`** — RSS feed list (comments; optional `Name | URL`)
 - **`interests.md`** — keywords + narrative (used for relevance)
-- **`prompt.txt`** — prompt template (used by OpenAI and Cursor backends)
+- **`prompt.txt`** — prompt template (used by OpenAI, Gemini, and Cursor backends)
 - **`digest.md`** — generated output (auto-updated)
 - **`.github/workflows/weekly-digest.yml`** — scheduled GitHub Action
 - **`requirements.txt`** — Python dependencies
@@ -52,7 +52,14 @@ Alternatively use pip and a venv as usual; the GitHub workflow uses uv and reads
 2. Install the Cursor CLI and set **`CURSOR_API_KEY`** (Cursor settings).
 3. For GitHub Actions: add secret **`CURSOR_API_KEY`** and keep the workflow’s Cursor install step.
 
-Backend is auto-chosen from which key is set, or set **`TOCIFY_BACKEND=openai`** or **`cursor`** to force.
+## Quick start (Gemini)
+
+1. **Fork** the repo.
+2. Set **`GEMINI_API_KEY`** and optionally **`GEMINI_MODEL`** (default: `gemini-2.0-flash`).
+3. Force backend with **`TOCIFY_BACKEND=gemini`**.
+4. Locally: copy `.env.example` to `.env`, add your key, run `python digest.py`.
+
+Backend is auto-chosen from which key is set, or set **`TOCIFY_BACKEND=openai`**, **`cursor`**, or **`gemini`** to force.
 
 ---
 
