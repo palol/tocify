@@ -68,3 +68,32 @@ PLOS Biology | https://journals.plos.org/plosbiology/rss
 
 # Preprints
 bioRxiv neuroscience | https://www.biorxiv.org/rss/subject/neuroscience.xml
+```
+
+---
+
+## Vault / multi-topic runner (`tocify-runner`)
+
+For multiple topics and a shared vault layout, use the **`tocify-runner`** CLI (same package). It uses tocify for RSS fetch, prefilter, triage, and render; adds per-topic feeds/interests, topic redundancy vs a digital garden, topic gardener, and `briefs_articles.csv`.
+
+Set **`BCI_VAULT_ROOT`** to the vault root (directory containing `config/`, `agent/`). Default is current directory.
+
+**Commands**
+
+- **Weekly brief**: `tocify-runner weekly --topic bci` or `tocify-runner weekly --topic lookdeep "2025 week 2"`
+- **Monthly roundup**: `tocify-runner monthly --topic bci --month 2025-01`
+- **Annual review**: `tocify-runner annual-review --year 2025 --topic bci`
+- **List topics**: `tocify-runner list-topics`
+- **Clear topic data**: `tocify-runner clear-topic bci --yes`
+- **Process whole year**: `tocify-runner process-whole-year 2025 --topic bci`
+- **Calculate weeks**: `tocify-runner calculate-weeks 2026-01`
+
+**Vault layout**
+
+- `config/feeds.<topic>.txt` — RSS feeds (Name | URL)
+- `config/interests.<topic>.md` — Keywords + Narrative
+- `config/triage_prompt.txt` — Shared triage prompt
+- `config/briefs_articles.csv` — Chosen articles (topic column)
+- `agent/briefs/` — Weekly briefs and monthly/annual outputs
+- `agent/logs/` — Logs
+- `topics/` — Optional digital garden for topic redundancy and gardener
