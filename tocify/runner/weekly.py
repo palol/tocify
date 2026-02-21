@@ -56,6 +56,9 @@ TRACKING_PARAMS = frozenset({
     "fbclid", "gclid", "msclkid", "ref", "mc_cid", "mc_eid", "_ga",
 })
 URL_IN_TEXT_RE = re.compile(r"https?://[^\s<>()\]\}]+", re.IGNORECASE)
+FOOTNOTE_DEF_LINE_RE = re.compile(r"^\[\^(\d+)\]:\s*(\S+)\s*$")
+FOOTNOTE_MARKER_RE = re.compile(r"\[\^(\d+)\]")
+MENTIONS_SUFFIX_RE = re.compile(r"\s*_\(\s*mentions:\s*\d+\s+sources?\s*\)_\s*$", re.IGNORECASE)
 
 
 def parse_week_spec(s: str) -> str:
@@ -165,13 +168,18 @@ Candidate RSS items:
 {items_json}
 
 Return **only** a single JSON object, no markdown code fences, no commentary. Schema:
-{{"redundant_ids": ["<id1>", "<id2>", ...]}}
+{{"redundant_ids": ["<id1>", "<id2>", ...], "redundant_mentions": [{{"id": "<id>", "topic_slug": "<slug>", "matched_fact_bullet": "- <exact bullet line from topic file>", "source_url": "<article url>"}}]}}
+Rules for redundant_mentions:
+- Include one record only when the item is redundant due to repeated knowledge already captured by a specific topic fact bullet.
+- `matched_fact_bullet` must copy the exact bullet line from the topic markdown.
+- `source_url` should be the candidate item's link URL.
+- If no repeated-fact match is available, use an empty list.
 List the "id" of each candidate item that is redundant."""
 
 
-def _call_cursor_topic_redundancy(topic_paths: list[Path], items: list[dict]) -> set[str]:
+def _call_cursor_topic_redundancy(topic_paths: list[Path], items: list[dict]) -> tuple[set[str], list[dict]]:
     if not topic_paths or not items:
-        return set()
+        return set(), []
     topic_refs = "\n".join(f"@{p.resolve()}" for p in topic_paths)
     lean_items = [
         {
@@ -197,29 +205,85 @@ def _call_cursor_topic_redundancy(topic_paths: list[Path], items: list[dict]) ->
     start = response_text.find("{")
     end = response_text.rfind("}") + 1
     if start < 0 or end <= start:
-        return set()
+        return set(), []
     try:
         parsed = json.loads(response_text[start:end])
     except json.JSONDecodeError:
-        return set()
+        return set(), []
     redundant = parsed.get("redundant_ids")
     if not isinstance(redundant, list):
-        return set()
-    return {str(x) for x in redundant if x}
+        redundant_ids: set[str] = set()
+    else:
+        redundant_ids = {str(x).strip() for x in redundant if str(x).strip()}
+
+    item_by_id = {str(it.get("id") or "").strip(): it for it in items}
+    mentions: list[dict] = []
+    raw_mentions = parsed.get("redundant_mentions")
+    if isinstance(raw_mentions, list):
+        for raw in raw_mentions:
+            if not isinstance(raw, dict):
+                continue
+            item_id = str(raw.get("id") or "").strip()
+            if not item_id or item_id not in item_by_id:
+                continue
+            topic_slug = str(raw.get("topic_slug") or "").strip()
+            matched_fact_bullet = str(raw.get("matched_fact_bullet") or "").strip()
+            source_url = str(raw.get("source_url") or "").strip()
+            if not source_url:
+                source_url = str(item_by_id[item_id].get("link") or "").strip()
+            if not topic_slug or not matched_fact_bullet or not source_url:
+                continue
+            mentions.append(
+                {
+                    "id": item_id,
+                    "topic_slug": topic_slug,
+                    "matched_fact_bullet": matched_fact_bullet,
+                    "source_url": source_url,
+                }
+            )
+    return redundant_ids, mentions
+
+
+def _dedupe_redundant_mentions(mentions: list[dict]) -> list[dict]:
+    deduped: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+    for raw in mentions:
+        if not isinstance(raw, dict):
+            continue
+        topic_slug = str(raw.get("topic_slug") or "").strip().lower()
+        matched_fact_bullet = str(raw.get("matched_fact_bullet") or "").strip()
+        source_url = str(raw.get("source_url") or "").strip()
+        if not topic_slug or not matched_fact_bullet or not source_url:
+            continue
+        key = (topic_slug, matched_fact_bullet, source_url)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(
+            {
+                "id": str(raw.get("id") or "").strip(),
+                "topic_slug": topic_slug,
+                "matched_fact_bullet": matched_fact_bullet,
+                "source_url": source_url,
+            }
+        )
+    return deduped
 
 
 def filter_topic_redundant_items(
     topic_paths: list[Path], items: list[dict], batch_size: int
-) -> tuple[list[dict], int]:
+) -> tuple[list[dict], int, list[dict]]:
     if not topic_paths or not items:
-        return items, 0
+        return items, 0, []
     all_redundant: set[str] = set()
+    all_mentions: list[dict] = []
     for i in range(0, len(items), batch_size):
         batch = items[i : i + batch_size]
-        redundant = _call_cursor_topic_redundancy(topic_paths, batch)
+        redundant, mentions = _call_cursor_topic_redundancy(topic_paths, batch)
         all_redundant |= redundant
+        all_mentions.extend([m for m in mentions if str(m.get("id") or "").strip() in redundant])
     kept = [it for it in items if it["id"] not in all_redundant]
-    return kept, len(items) - len(kept)
+    return kept, len(items) - len(kept), _dedupe_redundant_mentions(all_mentions)
 
 
 # ---- topic gardener ----
@@ -349,6 +413,170 @@ def _normalize_to_fact_bullets(markdown: str) -> str:
 
     deduped = _merge_unique(facts)
     return "\n".join(f"- {f}" for f in deduped)
+
+
+def _normalize_fact_for_match(text: str) -> str:
+    line = str(text or "").strip()
+    line = BULLET_LINE_RE.sub("", line, count=1)
+    line = NUMBERED_LINE_RE.sub("", line, count=1)
+    line = FOOTNOTE_MARKER_RE.sub("", line)
+    line = MENTIONS_SUFFIX_RE.sub("", line)
+    line = re.sub(r"\s+", " ", line).strip().lower()
+    return line
+
+
+def _extract_footnote_definitions(markdown: str) -> dict[int, str]:
+    definitions: dict[int, str] = {}
+    for raw_line in (markdown or "").splitlines():
+        m = FOOTNOTE_DEF_LINE_RE.match(raw_line.strip())
+        if not m:
+            continue
+        idx = int(m.group(1))
+        url = m.group(2).strip()
+        if idx not in definitions:
+            definitions[idx] = url
+    return definitions
+
+
+def _next_footnote_index(definitions: dict[int, str]) -> int:
+    return max(definitions.keys(), default=0) + 1
+
+
+def _upsert_inline_mentions_count(bullet_line: str, mention_count: int) -> str:
+    base = MENTIONS_SUFFIX_RE.sub("", bullet_line).rstrip()
+    return f"{base} _(mentions: {mention_count} sources)_"
+
+
+def _apply_redundant_mention_to_body(body: str, matched_fact_bullet: str, source_url: str) -> tuple[str, str]:
+    lines = (body or "").splitlines()
+    target = _normalize_fact_for_match(matched_fact_bullet)
+    if not target:
+        return body, "invalid"
+
+    bullet_idx = -1
+    for idx, line in enumerate(lines):
+        if not BULLET_LINE_RE.match(line):
+            continue
+        if _normalize_fact_for_match(line) == target:
+            bullet_idx = idx
+            break
+    if bullet_idx < 0:
+        return body, "missing_bullet"
+
+    definitions = _extract_footnote_definitions(body)
+    url_to_idx = {u: i for i, u in definitions.items()}
+    source_url = str(source_url or "").strip()
+    if not source_url:
+        return body, "invalid"
+
+    changed = False
+    created_defs: list[tuple[int, str]] = []
+
+    line = lines[bullet_idx]
+    line_without_suffix = MENTIONS_SUFFIX_RE.sub("", line).rstrip()
+    marker_indices = {int(x) for x in FOOTNOTE_MARKER_RE.findall(line_without_suffix)}
+    line_urls = {definitions[i] for i in marker_indices if i in definitions}
+
+    if source_url not in line_urls:
+        marker_idx = url_to_idx.get(source_url)
+        if marker_idx is None:
+            marker_idx = _next_footnote_index(definitions)
+            definitions[marker_idx] = source_url
+            url_to_idx[source_url] = marker_idx
+            created_defs.append((marker_idx, source_url))
+            changed = True
+
+        marker = f"[^{marker_idx}]"
+        if marker not in line_without_suffix:
+            spacer = "" if re.search(r"\[\^\d+\]\s*$", line_without_suffix) else " "
+            line_without_suffix = f"{line_without_suffix}{spacer}{marker}"
+            changed = True
+
+    marker_indices = {int(x) for x in FOOTNOTE_MARKER_RE.findall(line_without_suffix)}
+    unique_marker_urls = {definitions[i] for i in marker_indices if i in definitions}
+    updated_line = _upsert_inline_mentions_count(line_without_suffix, len(unique_marker_urls))
+    if updated_line != line:
+        lines[bullet_idx] = updated_line
+        changed = True
+
+    if not changed:
+        return body, "already_recorded"
+
+    updated_body = "\n".join(lines)
+    if created_defs:
+        defs_block = "\n".join(f"[^{idx}]: {url}" for idx, url in created_defs)
+        updated_body = f"{updated_body.rstrip()}\n\n{defs_block}"
+    return updated_body, "applied"
+
+
+def _apply_redundant_mentions(topics_dir: Path, mentions: list[dict], today: str) -> dict[str, int]:
+    stats = {
+        "mentions_input": len(mentions),
+        "mentions_applied": 0,
+        "mentions_already_recorded": 0,
+        "mentions_missing_topic": 0,
+        "mentions_missing_bullet": 0,
+        "mentions_invalid": 0,
+        "files_updated": 0,
+    }
+    if not mentions:
+        return stats
+
+    mentions_by_slug: dict[str, list[dict]] = {}
+    for raw in mentions:
+        if not isinstance(raw, dict):
+            stats["mentions_invalid"] += 1
+            continue
+        slug = re.sub(r"[^a-z0-9\-]", "", str(raw.get("topic_slug") or "").strip().lower().replace("_", "-"))
+        matched_fact_bullet = str(raw.get("matched_fact_bullet") or "").strip()
+        source_url = str(raw.get("source_url") or "").strip()
+        if not slug or not matched_fact_bullet or not source_url:
+            stats["mentions_invalid"] += 1
+            continue
+        mentions_by_slug.setdefault(slug, []).append(
+            {
+                "matched_fact_bullet": matched_fact_bullet,
+                "source_url": source_url,
+            }
+        )
+
+    for slug, slug_mentions in mentions_by_slug.items():
+        path = topics_dir / f"{slug}.md"
+        if not path.exists():
+            stats["mentions_missing_topic"] += len(slug_mentions)
+            continue
+        content = path.read_text(encoding="utf-8")
+        frontmatter, body = split_frontmatter_and_body(content)
+        updated_body = body
+        changed = False
+        sources_to_merge: list[str] = []
+        for mention in slug_mentions:
+            updated_body, status = _apply_redundant_mention_to_body(
+                updated_body,
+                mention["matched_fact_bullet"],
+                mention["source_url"],
+            )
+            if status == "applied":
+                stats["mentions_applied"] += 1
+                changed = True
+                sources_to_merge.append(mention["source_url"])
+            elif status == "already_recorded":
+                stats["mentions_already_recorded"] += 1
+            elif status == "missing_bullet":
+                stats["mentions_missing_bullet"] += 1
+            else:
+                stats["mentions_invalid"] += 1
+
+        if changed:
+            updated_frontmatter = dict(frontmatter)
+            updated_frontmatter["lastmod"] = today
+            updated_frontmatter["updated"] = today
+            existing_sources = _string_list(updated_frontmatter.get("sources"))
+            updated_frontmatter["sources"] = _dedupe_urls(existing_sources + sources_to_merge)
+            path.write_text(with_frontmatter(updated_body, updated_frontmatter), encoding="utf-8")
+            stats["files_updated"] += 1
+
+    return stats
 
 
 def _list_existing_topic_previews(topics_dir: Path, max_preview_chars: int = 400) -> list[dict]:
@@ -694,17 +922,35 @@ def run_weekly(
         print(f"Cross-week filter: dropped {before_cross - len(items)} items, {len(items)} remaining")
 
     topics_dir = root / "topics"
+    redundant_mentions: list[dict] = []
     if TOPIC_REDUNDANCY_ENABLED and items:
         topics_dir.mkdir(parents=True, exist_ok=True)
     if TOPIC_REDUNDANCY_ENABLED and topics_dir.exists() and items:
         topic_paths = load_recent_topic_files(topics_dir, TOPIC_REDUNDANCY_LOOKBACK_DAYS)
         if topic_paths:
             print(f"Topic redundancy: checking {len(items)} items against {len(topic_paths)} topic file(s)")
-            items, dropped = filter_topic_redundant_items(
+            items, dropped, redundant_mentions = filter_topic_redundant_items(
                 topic_paths, items, TOPIC_REDUNDANCY_BATCH_SIZE
             )
             if dropped > 0:
                 print(f"Topic redundancy: dropped {dropped} items, {len(items)} remaining")
+            if redundant_mentions:
+                print(f"Topic redundancy: identified {len(redundant_mentions)} repeated-fact mention(s)")
+
+    if redundant_mentions and not dry_run:
+        mention_today = datetime.now(timezone.utc).date().isoformat()
+        mention_stats = _apply_redundant_mentions(topics_dir, redundant_mentions, mention_today)
+        print(
+            "Topic redundancy mentions: "
+            f"applied={mention_stats['mentions_applied']}, "
+            f"already_recorded={mention_stats['mentions_already_recorded']}, "
+            f"missing_topic={mention_stats['mentions_missing_topic']}, "
+            f"missing_bullet={mention_stats['mentions_missing_bullet']}, "
+            f"invalid={mention_stats['mentions_invalid']}, "
+            f"files_updated={mention_stats['files_updated']}"
+        )
+    elif redundant_mentions and dry_run:
+        print(f"Dry run: would apply {len(redundant_mentions)} repeated-fact mention(s) to topic pages")
 
     if dry_run:
         items = items[:dry_run]
