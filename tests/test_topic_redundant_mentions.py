@@ -309,7 +309,7 @@ class TopicRedundantMentionsTests(unittest.TestCase):
         self.assertNotIn("[^1]: https://example.com/old", prompt)
         self.assertNotIn("sources:\n", prompt)
 
-    def test_run_weekly_applies_mentions_when_not_dry_run(self) -> None:
+    def test_run_weekly_skips_redundant_mention_application_when_not_dry_run(self) -> None:
         weekly = _load_weekly_module()
         weekly.TOPIC_REDUNDANCY_ENABLED = True
         weekly.TOPIC_GARDENER_ENABLED = False
@@ -344,7 +344,7 @@ class TopicRedundantMentionsTests(unittest.TestCase):
                 ],
             )
             weekly.run_weekly(topic="bci", week_spec="2026 week 8", dry_run=0, vault_root=root)
-        weekly._apply_redundant_mentions.assert_called_once()
+        weekly._apply_redundant_mentions.assert_not_called()
 
     def test_run_weekly_dry_run_skips_mention_application(self) -> None:
         weekly = _load_weekly_module()

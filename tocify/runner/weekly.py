@@ -353,9 +353,11 @@ Below are (1) this week's weekly brief, and (2) existing topic files. Propose **
 Rules:
 - **create**: New topic when the brief introduces a distinct theme. Use lowercase-hyphen slug. Include title, body_markdown, sources, links_to, tags.
   - `body_markdown` must be a **fact bullet list** (`- Fact...`), not prose paragraphs.
-- **update**: When an item adds to an existing topic. Provide slug, append_sources, optionally summary_addendum and tags.
+- **update**: Only when the brief adds genuinely new knowledge to an existing topic. Provide slug, append_sources, optionally summary_addendum, summary_addendum_sources, and tags.
   - `summary_addendum` must be a **fact bullet list** (`- Fact...`) when present.
-- Every markdown text addition must include source attribution using markdown footnotes with URL definitions, e.g. [^1] and [^1]: https://example.com.
+- Each bullet in `summary_addendum` must map to exactly one source URL in `summary_addendum_sources` (same order, same length).
+- Use source attribution with markdown footnotes, e.g. [^1] and [^1]: https://example.com.
+- If no new knowledge is present, do not emit an update action.
 
 This week's brief (category: {topic}):
 {brief_content}
@@ -364,7 +366,7 @@ Existing topic files (slug and preview):
 {existing_topics}
 
 Return **only** a single JSON object. Schema:
-{{"topic_actions": [{{ "action": "create" | "update", "slug": "<slug>", "title": "<title>", "body_markdown": "<markdown>", "sources": ["url"], "links_to": ["slug"], "append_sources": ["url"], "summary_addendum": "<markdown>", "tags": ["tag"] }}]}}
+{{"topic_actions": [{{ "action": "create" | "update", "slug": "<slug>", "title": "<title>", "body_markdown": "<markdown>", "sources": ["url"], "links_to": ["slug"], "append_sources": ["url"], "summary_addendum": "<markdown>", "summary_addendum_sources": ["url"], "tags": ["tag"] }}]}}
 Bullet examples for markdown fields:
 - body_markdown: "- Fact one.\\n- Fact two."
 - summary_addendum: "- New finding one.\\n- New finding two."
@@ -386,6 +388,7 @@ TOPIC_GARDENER_SCHEMA = {
                     "links_to": {"type": ["array", "null"], "items": {"type": "string"}},
                     "append_sources": {"type": ["array", "null"], "items": {"type": "string"}},
                     "summary_addendum": {"type": ["string", "null"]},
+                    "summary_addendum_sources": {"type": ["array", "null"], "items": {"type": "string"}},
                     "tags": {"type": ["array", "null"], "items": {"type": "string"}},
                 },
                 "required": [
@@ -587,6 +590,146 @@ def _extract_footnote_definitions(markdown: str) -> dict[int, str]:
 
 def _next_footnote_index(definitions: dict[int, str]) -> int:
     return max(definitions.keys(), default=0) + 1
+
+
+def _split_body_and_footnote_definitions(markdown: str) -> tuple[str, dict[int, str]]:
+    body_lines: list[str] = []
+    definitions: dict[int, str] = {}
+    for raw_line in (markdown or "").splitlines():
+        m = FOOTNOTE_DEF_LINE_RE.match(raw_line.strip())
+        if not m:
+            body_lines.append(raw_line.rstrip())
+            continue
+        idx = int(m.group(1))
+        url = m.group(2).strip()
+        if idx not in definitions and url:
+            definitions[idx] = url
+    return "\n".join(body_lines).rstrip(), definitions
+
+
+def _compose_body_with_footnote_definitions(body: str, definitions: dict[int, str]) -> str:
+    body_text = (body or "").rstrip()
+    if not definitions:
+        return body_text
+    defs = "\n".join(f"[^{idx}]: {definitions[idx]}" for idx in sorted(definitions))
+    if not body_text:
+        return defs
+    return f"{body_text}\n\n{defs}"
+
+
+def _extract_fact_bullets(markdown: str) -> list[str]:
+    bullets: list[str] = []
+    for raw_line in (markdown or "").splitlines():
+        line = raw_line.strip()
+        if BULLET_LINE_RE.match(line):
+            bullets.append(line)
+    return bullets
+
+
+def _resolve_update_bullet_sources(
+    action: dict,
+    summary_addendum: str,
+    summary_bullets: list[str],
+    append_sources: list[str],
+    allowed_source_url_index: dict[str, str] | None,
+) -> list[str]:
+    explicit = action.get("summary_addendum_sources")
+    if isinstance(explicit, list):
+        mapped: list[str] = []
+        for raw in explicit:
+            canonical = _resolve_allowed_source_url(str(raw or "").strip(), "", allowed_source_url_index)
+            if not canonical:
+                raise ValueError("update action has summary_addendum but no source URLs")
+            mapped.append(canonical)
+        if len(mapped) != len(summary_bullets):
+            raise ValueError("update action has mismatched summary_addendum_sources length")
+        return mapped
+
+    fallback_sources = _filter_urls_to_allowed(
+        append_sources + _extract_urls_from_markdown(summary_addendum),
+        allowed_source_url_index,
+    )
+    if not fallback_sources:
+        raise ValueError("update action has summary_addendum but no source URLs")
+
+    resolved: list[str] = []
+    for idx, bullet in enumerate(summary_bullets):
+        bullet_url = ""
+        for candidate in _extract_urls_from_markdown(bullet):
+            canonical = _resolve_allowed_source_url(candidate, "", allowed_source_url_index)
+            if canonical:
+                bullet_url = canonical
+                break
+        if bullet_url:
+            resolved.append(bullet_url)
+            continue
+        if len(fallback_sources) == 1:
+            resolved.append(fallback_sources[0])
+            continue
+        if idx < len(fallback_sources):
+            resolved.append(fallback_sources[idx])
+            continue
+        raise ValueError("update action has summary_addendum but no source URLs")
+    return resolved
+
+
+def _attach_sources_to_bullets(
+    summary_bullets: list[str], bullet_sources: list[str], definitions: dict[int, str]
+) -> tuple[list[str], dict[int, str], list[str]]:
+    updated_defs = dict(definitions)
+    url_to_idx = {url: idx for idx, url in updated_defs.items()}
+    lines: list[str] = []
+    used_sources: list[str] = []
+    for bullet, source_url in zip(summary_bullets, bullet_sources):
+        clean_bullet = FOOTNOTE_MARKER_RE.sub("", bullet).strip()
+        source = str(source_url or "").strip()
+        if not source:
+            continue
+        marker_idx = url_to_idx.get(source)
+        if marker_idx is None:
+            marker_idx = _next_footnote_index(updated_defs)
+            updated_defs[marker_idx] = source
+            url_to_idx[source] = marker_idx
+        marker = f"[^{marker_idx}]"
+        spacer = "" if re.search(r"\[\^\d+\]\s*$", clean_bullet) else " "
+        lines.append(f"{clean_bullet}{spacer}{marker}")
+        used_sources.append(source)
+    return lines, updated_defs, used_sources
+
+
+def _append_to_gardner_updates_section(body: str, bullet_lines: list[str]) -> str:
+    if not bullet_lines:
+        return (body or "").rstrip()
+
+    lines = (body or "").splitlines()
+    section_header = "## Gardner updates"
+    section_idx = -1
+    for idx, line in enumerate(lines):
+        if line.strip().lower() == section_header.lower():
+            section_idx = idx
+            break
+
+    if section_idx < 0:
+        base = (body or "").rstrip()
+        block = "\n".join(bullet_lines)
+        if not base:
+            return f"{section_header}\n\n{block}"
+        return f"{base}\n\n{section_header}\n\n{block}"
+
+    section_start = section_idx + 1
+    section_end = len(lines)
+    for idx in range(section_start, len(lines)):
+        if re.match(r"^\s*##\s+", lines[idx]):
+            section_end = idx
+            break
+    section_lines = lines[section_start:section_end]
+    while section_lines and not section_lines[-1].strip():
+        section_lines.pop()
+    if section_lines:
+        section_lines.append("")
+    section_lines.extend(bullet_lines)
+    merged_lines = lines[:section_start] + section_lines + lines[section_end:]
+    return "\n".join(merged_lines).rstrip()
 
 
 def _apply_redundant_mention_to_body(body: str, matched_fact_bullet: str, source_url: str) -> tuple[str, str]:
@@ -827,29 +970,32 @@ def _apply_topic_action(
             append_sources = [str(s).strip() for s in append_sources if str(s).strip()]
         else:
             append_sources = []
-        append_sources = _filter_urls_to_allowed(append_sources, allowed_source_url_index)
         summary_addendum = _normalize_to_fact_bullets((action.get("summary_addendum") or "").strip())
+        summary_bullets = _extract_fact_bullets(summary_addendum)
+        if not summary_bullets:
+            return
         action_tags = normalize_ai_tags(_string_list(action.get("tags")))
         existing_tags = normalize_ai_tags(_string_list(existing_frontmatter.get("tags")))
         merged_tags = normalize_ai_tags(_merge_unique(existing_tags + action_tags + default_tags))
-        to_append = []
-        sources_for_summary = _filter_urls_to_allowed(
-            append_sources + _extract_urls_from_markdown(summary_addendum),
+        bullet_sources = _resolve_update_bullet_sources(
+            action,
+            summary_addendum,
+            summary_bullets,
+            append_sources,
             allowed_source_url_index,
         )
-        if summary_addendum:
-            if not sources_for_summary:
-                raise ValueError("update action has summary_addendum but no source URLs")
-            summary_with_footnotes = _with_source_footnotes(summary_addendum, sources_for_summary)
-            to_append.append(f"\n\n## Recent update ({today})\n\n{summary_with_footnotes}")
-        elif append_sources:
-            source_note = _with_source_footnotes(_normalize_to_fact_bullets("Source refresh."), append_sources)
-            to_append.append(f"\n\n## Recent update ({today})\n\n{source_note}")
-        if append_sources:
-            to_append.append("\n\n### New sources\n\n" + "\n".join(f"- {u}" for u in append_sources))
-        updated_body = existing_body + "".join(to_append)
+        body_without_defs, definitions = _split_body_and_footnote_definitions(existing_body)
+        footnoted_bullets, definitions, used_sources = _attach_sources_to_bullets(
+            summary_bullets,
+            bullet_sources,
+            definitions,
+        )
+        if not footnoted_bullets:
+            return
+        body_with_updates = _append_to_gardner_updates_section(body_without_defs, footnoted_bullets)
+        updated_body = _compose_body_with_footnote_definitions(body_with_updates, definitions)
         existing_sources = _string_list(existing_frontmatter.get("sources"))
-        merged_sources = _dedupe_urls(existing_sources + sources_for_summary)
+        merged_sources = _dedupe_urls(existing_sources + used_sources)
         frontmatter = dict(existing_frontmatter)
         frontmatter["title"] = str(frontmatter.get("title") or slug).strip() or slug
         frontmatter["date"] = str(frontmatter.get("date") or today)
@@ -1133,22 +1279,10 @@ def run_weekly(
             if dropped > 0:
                 print(f"Topic redundancy: dropped {dropped} items, {len(items)} remaining")
             if redundant_mentions:
-                print(f"Topic redundancy: identified {len(redundant_mentions)} repeated-fact mention(s)")
-
-    if redundant_mentions and not dry_run:
-        mention_today = datetime.now(timezone.utc).date().isoformat()
-        mention_stats = _apply_redundant_mentions(topics_dir, redundant_mentions, mention_today)
-        print(
-            "Topic redundancy mentions: "
-            f"applied={mention_stats['mentions_applied']}, "
-            f"already_recorded={mention_stats['mentions_already_recorded']}, "
-            f"missing_topic={mention_stats['mentions_missing_topic']}, "
-            f"missing_bullet={mention_stats['mentions_missing_bullet']}, "
-            f"invalid={mention_stats['mentions_invalid']}, "
-            f"files_updated={mention_stats['files_updated']}"
-        )
-    elif redundant_mentions and dry_run:
-        print(f"Dry run: would apply {len(redundant_mentions)} repeated-fact mention(s) to topic pages")
+                print(
+                    f"Topic redundancy: identified {len(redundant_mentions)} repeated-fact mention(s) "
+                    "(topic citation updates disabled)"
+                )
 
     if dry_run:
         items = items[:dry_run]

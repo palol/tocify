@@ -102,6 +102,7 @@ class TopicGardenerFootnoteTests(unittest.TestCase):
                 "2026-02-20",
             )
             content = _read(topic_file)
+            self.assertIn("## Gardner updates", content)
             self.assertIn("- A decoding challenge posted new data at https://example.com/challenge.", content)
             self.assertIn("- A second lab reported reproducibility gains.", content)
 
@@ -244,10 +245,11 @@ class TopicGardenerFootnoteTests(unittest.TestCase):
                 "2026-02-20",
             )
             content = _read(topic_file)
-            self.assertIn("## Recent update (2026-02-20)", content)
-            self.assertIn("New milestone announced. [^1]", content)
+            self.assertIn("## Gardner updates", content)
+            self.assertIn("- New milestone announced. [^1]", content)
             self.assertIn("[^1]: https://example.com/milestone", content)
-            self.assertIn("### New sources", content)
+            self.assertNotIn("## Recent update", content)
+            self.assertNotIn("### New sources", content)
 
     def test_update_extracts_source_url_from_summary_when_append_sources_empty(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -268,7 +270,7 @@ class TopicGardenerFootnoteTests(unittest.TestCase):
             self.assertIn("Details are in https://example.com/report. [^1]", content)
             self.assertIn("[^1]: https://example.com/report", content)
 
-    def test_update_with_sources_only_appends_source_refresh_with_footnotes(self) -> None:
+    def test_update_with_sources_only_does_not_append_source_refresh(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             tmp_path = Path(td)
             topic_file = tmp_path / "bci.md"
@@ -283,9 +285,7 @@ class TopicGardenerFootnoteTests(unittest.TestCase):
                 "2026-02-20",
             )
             content = _read(topic_file)
-            self.assertIn("Source refresh. [^1]", content)
-            self.assertIn("[^1]: https://example.com/source-only", content)
-            self.assertIn("### New sources", content)
+            self.assertEqual(content, "---\ntitle: \"BCI\"\n---\n\nBase content.")
 
     def test_create_with_body_and_no_source_urls_raises(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -375,6 +375,63 @@ class TopicGardenerFootnoteTests(unittest.TestCase):
             self.assertIn("https://example.com/old", frontmatter.get("sources", []))
             self.assertIn("https://example.com/new", frontmatter.get("sources", []))
             self.assertEqual(frontmatter.get("tags"), ["legacy", "neuro", "bci"])
+
+    def test_update_creates_single_gardner_updates_section(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            topic_file = tmp_path / "bci.md"
+            topic_file.write_text("---\ntitle: \"BCI\"\n---\n\nHuman paragraph.", encoding="utf-8")
+            _apply_topic_action(
+                tmp_path,
+                {
+                    "action": "update",
+                    "slug": "bci",
+                    "summary_addendum": "- New fact one.\n- New fact two.",
+                    "summary_addendum_sources": ["https://example.com/a", "https://example.com/b"],
+                    "append_sources": [],
+                },
+                "2026-02-20",
+            )
+            content = _read(topic_file)
+            self.assertEqual(content.count("## Gardner updates"), 1)
+            self.assertIn("Human paragraph.\n\n## Gardner updates", content)
+            self.assertIn("- New fact one. [^1]", content)
+            self.assertIn("- New fact two. [^2]", content)
+            self.assertIn("[^1]: https://example.com/a", content)
+            self.assertIn("[^2]: https://example.com/b", content)
+
+    def test_update_appends_to_existing_gardner_updates_section(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            topic_file = tmp_path / "bci.md"
+            topic_file.write_text(
+                (
+                    "---\n"
+                    "title: \"BCI\"\n"
+                    "---\n\n"
+                    "Human paragraph.\n\n"
+                    "## Gardner updates\n\n"
+                    "- Existing fact. [^1]\n\n"
+                    "[^1]: https://example.com/old\n"
+                ),
+                encoding="utf-8",
+            )
+            _apply_topic_action(
+                tmp_path,
+                {
+                    "action": "update",
+                    "slug": "bci",
+                    "summary_addendum": "- New fact.",
+                    "append_sources": ["https://example.com/new"],
+                },
+                "2026-02-20",
+            )
+            content = _read(topic_file)
+            self.assertEqual(content.count("## Gardner updates"), 1)
+            self.assertIn("- Existing fact. [^1]", content)
+            self.assertIn("- New fact. [^2]", content)
+            self.assertIn("[^1]: https://example.com/old", content)
+            self.assertIn("[^2]: https://example.com/new", content)
 
 
 if __name__ == "__main__":
