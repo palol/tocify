@@ -1,6 +1,5 @@
 """Weekly digest for one topic: fetch (tocify), prefilter, triage, topic redundancy, gardener, brief + CSV."""
 
-<<<<<<< HEAD
 import csv
 import json
 import math
