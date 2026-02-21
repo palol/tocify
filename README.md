@@ -3,7 +3,7 @@
 This repo runs a GitHub Action once a week (or on-demand) that:
 
 1. pulls new items from a list of journal RSS feeds  
-2. triages items against your research interests (OpenAI API or Cursor CLI)  
+2. triages items against your research interests (OpenAI API, Gemini API, or Cursor CLI)  
 3. writes a ranked digest to `digest.md` and commits it back to the repo
 
 It’s meant to be forked and customized.
@@ -13,10 +13,10 @@ It’s meant to be forked and customized.
 ## What’s in this repo
 
 - **`digest.py`** — pipeline (fetch RSS → filter → triage → render markdown)
-- **`integrations/`** — optional Cursor CLI triage backend (default: in-file OpenAI in digest.py)
+- **`tocify/integrations/`** — triage backends (OpenAI, Gemini, Cursor)
 - **`feeds.txt`** — RSS feed list (comments; optional `Name | URL`)
 - **`interests.md`** — keywords + narrative (used for relevance)
-- **`prompt.txt`** — prompt template (used by OpenAI and Cursor backends)
+- **`prompt.txt`** — prompt template (used by OpenAI, Gemini, and Cursor backends)
 - **`digest.md`** — generated output (auto-updated)
 - **`.github/workflows/weekly-digest.yml`** — scheduled GitHub Action
 - **`requirements.txt`** — Python dependencies
@@ -52,7 +52,15 @@ Alternatively use pip and a venv as usual; the GitHub workflow uses uv and reads
 2. Install the Cursor CLI and set **`CURSOR_API_KEY`** (Cursor settings).
 3. For GitHub Actions: add secret **`CURSOR_API_KEY`** and keep the workflow’s Cursor install step.
 
-Backend is auto-chosen from which key is set, or set **`TOCIFY_BACKEND=openai`** or **`cursor`** to force.
+## Quick start (Gemini)
+
+1. **Fork** the repo.
+2. Set **`GEMINI_API_KEY`** and optionally **`GEMINI_MODEL`** (default: `gemini-2.0-flash`).
+3. Force backend with **`TOCIFY_BACKEND=gemini`**.
+4. Locally: copy `.env.example` to `.env`, add your key, run `python digest.py`.
+
+Backend is auto-chosen from which key is set, or set **`TOCIFY_BACKEND=openai`**, **`cursor`**, or **`gemini`** to force.
+For Cursor backend, the terminal command must be available as **`agent`** on `PATH`.
 
 ---
 
@@ -72,11 +80,36 @@ bioRxiv neuroscience | https://www.biorxiv.org/rss/subject/neuroscience.xml
 
 ---
 
+## Generated Markdown frontmatter (Quartz-friendly)
+
+Newly generated Markdown files include YAML frontmatter with Quartz-compatible keys and tocify metadata.
+
+Core keys:
+- `title`
+- `date`
+- `lastmod`
+- `tags` (AI-suggested, normalized)
+
+Additional metadata:
+- `generator`, `period`, `topic`
+- period keys like `week_of`, `month`, `year`
+- triage provenance: `triage_backend`, `triage_model` (and `triage_backends` / `triage_models` when mixed)
+- per-file stats where applicable (`included`, `scored`, etc.)
+
+This applies to newly generated outputs (`digest.md`, weekly briefs, monthly roundups, annual reviews, topic gardener pages). Existing files are not backfilled automatically.
+
+---
+
 ## Vault / multi-topic runner (`tocify-runner`)
 
 For multiple topics and a shared vault layout, use the **`tocify-runner`** CLI (same package). It uses tocify for RSS fetch, prefilter, triage, and render; adds per-topic feeds/interests, topic redundancy vs a digital garden, topic gardener, and `briefs_articles.csv`.
+Runner AI steps (weekly triage, topic redundancy, topic gardener, monthly, annual) follow the selected backend.
 
-Set **`BCI_VAULT_ROOT`** to the vault root (directory containing `config/`, `agent/`). Default is current directory.
+Set **`BCI_VAULT_ROOT`** to the vault root (directory containing `config/`, `content/`). Default is current directory.
+Topic gardener is **enabled by default** for runner weekly jobs; set **`TOPIC_GARDENER=0`** to opt out.
+Gardener writes topic updates as **fact bullet lists** under a persistent `## Gardner updates` section. Each new bullet gets one source footnote, and redundant articles do not trigger topic-page citation updates.
+If backend is `cursor` and `agent` is not found, runner exits with an actionable error; set `TOCIFY_BACKEND=openai` or `gemini` to use API backends instead.
+Weekly brief generation now canonicalizes `## [Title](url)` heading links using per-brief metadata rows (exact title first, then unique normalized-title match). If no deterministic canonical match is available, the existing rendered link is kept. This applies to newly generated weekly briefs; monthly and annual outputs are unchanged in this cycle.
 
 **Commands**
 
@@ -87,6 +120,9 @@ Set **`BCI_VAULT_ROOT`** to the vault root (directory containing `config/`, `age
 - **Clear topic data**: `tocify-runner clear-topic bci --yes`
 - **Process whole year**: `tocify-runner process-whole-year 2025 --topic bci`
 - **Calculate weeks**: `tocify-runner calculate-weeks 2026-01`
+- **Initialize Quartz scaffold**: `tocify-runner init-quartz --target . --write-local-exclude`
+
+`init-quartz` merges Quartz v4 scaffold paths into the target root (including `quartz/` and `content/`) and skips existing files by default. Use `--overwrite` to replace existing files. `--write-local-exclude` writes Quartz ignore rules into `.git/info/exclude` (local-only, not committed).
 
 **Vault layout**
 
@@ -94,6 +130,11 @@ Set **`BCI_VAULT_ROOT`** to the vault root (directory containing `config/`, `age
 - `config/interests.<topic>.md` — Keywords + Narrative
 - `config/triage_prompt.txt` — Shared triage prompt
 - `config/briefs_articles.csv` — Chosen articles (topic column)
-- `agent/briefs/` — Weekly briefs and monthly/annual outputs
-- `agent/logs/` — Logs
-- `topics/` — Optional digital garden for topic redundancy and gardener
+- `content/briefs/` — Weekly briefs and monthly/annual outputs
+- `content/logs/` — Logs
+- `content/topics/` — Optional digital garden for topic redundancy and gardener
+
+**Automation notes**
+
+- `.github/workflows/weekly-runner.yml` runs `tocify.runner` weekly when runner config files exist.
+- Legacy digest workflows (`weekly-digest.yml`, `weekly-digest-cursor.yml`) run `digest.py` only; they do not invoke runner gardener.

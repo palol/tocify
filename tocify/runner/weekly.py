@@ -1,5 +1,6 @@
 """Weekly digest for one topic: fetch (tocify), prefilter, triage, topic redundancy, gardener, brief + CSV."""
 
+<<<<<<< HEAD
 import csv
 import json
 import math
@@ -18,7 +19,22 @@ from newspaper import Article
 from tqdm import tqdm
 
 import tocify
-from tocify.runner.vault import get_topic_paths, VAULT_ROOT
+import importlib.util
+
+from tocify.frontmatter import (
+    aggregate_ranked_item_tags,
+    normalize_ai_tags,
+    split_frontmatter_and_body,
+    with_frontmatter,
+)
+from tocify.runner.link_hygiene import (
+    build_allowed_url_index,
+    extract_urls_from_markdown,
+    is_valid_http_url,
+    normalize_url_for_match,
+    sanitize_markdown_links,
+)
+from tocify.runner.vault import VAULT_ROOT, get_topic_paths, run_structured_prompt
 
 load_dotenv()
 
@@ -44,10 +60,9 @@ BRIEFS_ARTICLES_COLUMNS = [
     "why", "tags",
 ]
 
-TRACKING_PARAMS = frozenset({
-    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-    "fbclid", "gclid", "msclkid", "ref", "mc_cid", "mc_eid", "_ga",
-})
+FOOTNOTE_DEF_LINE_RE = re.compile(r"^\[\^(\d+)\]:\s*(\S+)\s*$")
+FOOTNOTE_MARKER_RE = re.compile(r"\[\^(\d+)\]")
+MENTIONS_SUFFIX_RE = re.compile(r"\s*_\(\s*mentions:\s*\d+\s+sources?\s*\)_\s*$", re.IGNORECASE)
 
 
 def parse_week_spec(s: str) -> str:
@@ -64,15 +79,7 @@ def parse_week_spec(s: str) -> str:
 
 
 def normalize_url_for_dedup(url: str) -> str:
-    if not (url or url.strip()):
-        return ""
-    s = url.strip()
-    parsed = urlparse(s)
-    query = parse_qs(parsed.query, keep_blank_values=False)
-    filtered = {k: v for k, v in query.items() if k.lower() not in TRACKING_PARAMS}
-    new_query = urlencode(sorted(filtered.items()), doseq=True)
-    no_fragment = parsed._replace(query=new_query, fragment="")
-    return urlunparse(no_fragment)
+    return normalize_url_for_match(url)
 
 
 def load_briefs_articles_urls(csv_path: Path, topic: str | None = None) -> set[str]:
@@ -113,6 +120,8 @@ def load_recent_topic_files(topics_dir: Path, max_age_days: int) -> list[Path]:
 
 
 def enrich_item_with_newspaper(item: dict, timeout: int) -> dict:
+    if Article is None:
+        return item
     link = (item.get("link") or "").strip()
     if not link:
         return item
@@ -155,14 +164,75 @@ Candidate RSS items:
 {items_json}
 
 Return **only** a single JSON object, no markdown code fences, no commentary. Schema:
-{{"redundant_ids": ["<id1>", "<id2>", ...]}}
+{{"redundant_ids": ["<id1>", "<id2>", ...], "redundant_mentions": [{{"id": "<id>", "topic_slug": "<slug>", "matched_fact_bullet": "- <exact bullet line from topic file>", "source_url": "<article url>"}}]}}
+Rules for redundant_mentions:
+- Include one record only when the item is redundant due to repeated knowledge already captured by a specific topic fact bullet.
+- `matched_fact_bullet` must copy the exact bullet line from the topic markdown.
+- Ignore YAML frontmatter fields and footnote definition lines (e.g., `[^1]: https://...`) during matching.
+- `source_url` should be the candidate item's link URL.
+- If no repeated-fact match is available, use an empty list.
 List the "id" of each candidate item that is redundant."""
 
+TOPIC_REDUNDANCY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "redundant_ids": {"type": "array", "items": {"type": "string"}},
+        "redundant_mentions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "topic_slug": {"type": "string"},
+                    "matched_fact_bullet": {"type": "string"},
+                    "source_url": {"type": "string"},
+                },
+                "required": ["id", "topic_slug", "matched_fact_bullet", "source_url"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["redundant_ids", "redundant_mentions"],
+    "additionalProperties": False,
+}
 
-def _call_cursor_topic_redundancy(topic_paths: list[Path], items: list[dict]) -> set[str]:
+
+def _sanitize_topic_body_for_redundancy(body: str) -> str:
+    lines: list[str] = []
+    for raw_line in (body or "").splitlines():
+        if FOOTNOTE_DEF_LINE_RE.match(raw_line.strip()):
+            continue
+        lines.append(raw_line.rstrip())
+    return "\n".join(lines).strip()
+
+
+def _render_topic_refs_for_redundancy(topic_paths: list[Path]) -> str:
+    refs: list[str] = []
+    for path in topic_paths:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        _, body = split_frontmatter_and_body(text)
+        sanitized = _sanitize_topic_body_for_redundancy(body)
+        if not sanitized:
+            continue
+        refs.append(
+            f"[BEGIN TOPIC: {path.stem} @ {path.resolve()}]\n"
+            f"{sanitized}\n"
+            f"[END TOPIC: {path.stem}]"
+        )
+    return "\n\n".join(refs)
+
+
+def _call_cursor_topic_redundancy(
+    topic_paths: list[Path], items: list[dict], allowed_source_url_index: dict[str, str] | None = None
+) -> tuple[set[str], list[dict]]:
     if not topic_paths or not items:
-        return set()
-    topic_refs = "\n".join(f"@{p.resolve()}" for p in topic_paths)
+        return set(), []
+    if allowed_source_url_index is None:
+        allowed_source_url_index = _build_allowed_source_url_index(items)
+    topic_refs = _render_topic_refs_for_redundancy(topic_paths) or "(no readable topic content)"
     lean_items = [
         {
             "id": it["id"],
@@ -177,26 +247,98 @@ def _call_cursor_topic_redundancy(topic_paths: list[Path], items: list[dict]) ->
         topic_refs=topic_refs,
         items_json=json.dumps(lean_items, ensure_ascii=False),
     )
-    args = ["agent", "-p", "--output-format", "text", "--trust", prompt]
-    result = subprocess.run(args, capture_output=True, text=True, env=os.environ)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"cursor topic-redundancy exit {result.returncode}: {result.stderr or result.stdout or 'no output'}"
-        )
-    response_text = (result.stdout or "").strip()
-    start = response_text.find("{")
-    end = response_text.rfind("}") + 1
-    if start < 0 or end <= start:
-        return set()
     try:
-        parsed = json.loads(response_text[start:end])
-    except json.JSONDecodeError:
-        return set()
+        parsed = run_structured_prompt(
+            prompt,
+            schema=TOPIC_REDUNDANCY_SCHEMA,
+            purpose="topic-redundancy",
+            trust=True,
+        )
+    except ValueError:
+        return set(), []
     redundant = parsed.get("redundant_ids")
     if not isinstance(redundant, list):
-        return set()
-    return {str(x) for x in redundant if x}
+        redundant_ids: set[str] = set()
+    else:
+        redundant_ids = {str(x).strip() for x in redundant if str(x).strip()}
 
+    item_by_id = {str(it.get("id") or "").strip(): it for it in items}
+    mentions: list[dict] = []
+    raw_mentions = parsed.get("redundant_mentions")
+    if isinstance(raw_mentions, list):
+        for raw in raw_mentions:
+            if not isinstance(raw, dict):
+                continue
+            item_id = str(raw.get("id") or "").strip()
+            if not item_id or item_id not in item_by_id:
+                continue
+            topic_slug = str(raw.get("topic_slug") or "").strip()
+            matched_fact_bullet = str(raw.get("matched_fact_bullet") or "").strip()
+            source_url = _resolve_allowed_source_url(
+                str(raw.get("source_url") or "").strip(),
+                str(item_by_id[item_id].get("link") or "").strip(),
+                allowed_source_url_index,
+            )
+            if not topic_slug or not matched_fact_bullet or not source_url:
+                continue
+            mentions.append(
+                {
+                    "id": item_id,
+                    "topic_slug": topic_slug,
+                    "matched_fact_bullet": matched_fact_bullet,
+                    "source_url": source_url,
+                }
+            )
+    return redundant_ids, mentions
+
+
+def _dedupe_redundant_mentions(mentions: list[dict]) -> list[dict]:
+    deduped: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+    for raw in mentions:
+        if not isinstance(raw, dict):
+            continue
+        topic_slug = str(raw.get("topic_slug") or "").strip().lower()
+        matched_fact_bullet = str(raw.get("matched_fact_bullet") or "").strip()
+        source_url = str(raw.get("source_url") or "").strip()
+        if not topic_slug or not matched_fact_bullet or not source_url:
+            continue
+        key = (topic_slug, matched_fact_bullet, source_url)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(
+            {
+                "id": str(raw.get("id") or "").strip(),
+                "topic_slug": topic_slug,
+                "matched_fact_bullet": matched_fact_bullet,
+                "source_url": source_url,
+            }
+        )
+    return deduped
+
+
+def filter_topic_redundant_items(
+    topic_paths: list[Path],
+    items: list[dict],
+    batch_size: int,
+    allowed_source_url_index: dict[str, str] | None = None,
+) -> tuple[list[dict], int, list[dict]]:
+    if not topic_paths or not items:
+        return items, 0, []
+    if allowed_source_url_index is None:
+        allowed_source_url_index = _build_allowed_source_url_index(items)
+    all_redundant: set[str] = set()
+    all_mentions: list[dict] = []
+    for i in range(0, len(items), batch_size):
+        batch = items[i : i + batch_size]
+        redundant, mentions = _call_cursor_topic_redundancy(
+            topic_paths, batch, allowed_source_url_index=allowed_source_url_index
+        )
+        all_redundant |= redundant
+        all_mentions.extend([m for m in mentions if str(m.get("id") or "").strip() in redundant])
+    kept = [it for it in items if it["id"] not in all_redundant]
+    return kept, len(items) - len(kept), _dedupe_redundant_mentions(all_mentions)
 
 def filter_topic_redundant_items(
     topic_paths: list[Path],
@@ -222,15 +364,19 @@ def filter_topic_redundant_items(
     kept = [it for it in items if it["id"] not in all_redundant]
     return kept, len(items) - len(kept)
 
-
 # ---- topic gardener ----
 TOPIC_GARDENER_PROMPT = """You are curating a **global digital garden** of evergreen topic pages.
 
 Below are (1) this week's weekly brief, and (2) existing topic files. Propose **create** or **update** actions.
 
 Rules:
-- **create**: New topic when the brief introduces a distinct theme. Use lowercase-hyphen slug. Include title, body_markdown, sources, links_to.
-- **update**: When an item adds to an existing topic. Provide slug, append_sources, optionally summary_addendum.
+- **create**: New topic when the brief introduces a distinct theme. Use lowercase-hyphen slug. Include title, body_markdown, sources, links_to, tags.
+  - `body_markdown` must be a **fact bullet list** (`- Fact...`), not prose paragraphs.
+- **update**: Only when the brief adds genuinely new knowledge to an existing topic. Provide slug, append_sources, optionally summary_addendum, summary_addendum_sources, and tags.
+  - `summary_addendum` must be a **fact bullet list** (`- Fact...`) when present.
+- Each bullet in `summary_addendum` must map to exactly one source URL in `summary_addendum_sources` (same order, same length).
+- Use source attribution with markdown footnotes, e.g. [^1] and [^1]: https://example.com.
+- If no new knowledge is present, do not emit an update action.
 
 This week's brief (category: {topic}):
 {brief_content}
@@ -239,8 +385,494 @@ Existing topic files (slug and preview):
 {existing_topics}
 
 Return **only** a single JSON object. Schema:
-{{"topic_actions": [{{ "action": "create" | "update", "slug": "<slug>", "title": "<title>", "body_markdown": "<markdown>", "sources": ["url"], "links_to": ["slug"], "append_sources": ["url"], "summary_addendum": "<markdown>" }}]}}
+{{"topic_actions": [{{ "action": "create" | "update", "slug": "<slug>", "title": "<title>", "body_markdown": "<markdown>", "sources": ["url"], "links_to": ["slug"], "append_sources": ["url"], "summary_addendum": "<markdown>", "summary_addendum_sources": ["url"], "tags": ["tag"] }}]}}
+Bullet examples for markdown fields:
+- body_markdown: "- Fact one.\\n- Fact two."
+- summary_addendum: "- New finding one.\\n- New finding two."
 Omit topic_actions or use [] if nothing to do."""
+
+TOPIC_GARDENER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "topic_actions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["create", "update"]},
+                    "slug": {"type": "string"},
+                    "title": {"type": ["string", "null"]},
+                    "body_markdown": {"type": ["string", "null"]},
+                    "sources": {"type": ["array", "null"], "items": {"type": "string"}},
+                    "links_to": {"type": ["array", "null"], "items": {"type": "string"}},
+                    "append_sources": {"type": ["array", "null"], "items": {"type": "string"}},
+                    "summary_addendum": {"type": ["string", "null"]},
+                    "summary_addendum_sources": {"type": ["array", "null"], "items": {"type": "string"}},
+                    "tags": {"type": ["array", "null"], "items": {"type": "string"}},
+                },
+                "required": [
+                    "action",
+                    "slug",
+                    "title",
+                    "body_markdown",
+                    "sources",
+                    "links_to",
+                    "append_sources",
+                    "summary_addendum",
+                    "tags",
+                ],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["topic_actions"],
+    "additionalProperties": False,
+}
+
+
+def _dedupe_urls(urls: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in urls:
+        u = str(raw).strip()
+        if not u:
+            continue
+        if u in seen:
+            continue
+        seen.add(u)
+        out.append(u)
+    return out
+
+
+def _build_allowed_source_url_index(items: list[dict]) -> dict[str, str]:
+    """Map normalized URL -> canonical metadata URL from item links."""
+    return build_allowed_url_index([str(item.get("link") or "").strip() for item in items])
+
+
+def _filter_urls_to_allowed(urls: list[str], allowed_source_url_index: dict[str, str] | None) -> list[str]:
+    deduped = _dedupe_urls(urls)
+    if allowed_source_url_index is None:
+        return deduped
+    out: list[str] = []
+    seen_norm: set[str] = set()
+    for raw in deduped:
+        norm = normalize_url_for_dedup(raw)
+        if not norm:
+            continue
+        canonical = allowed_source_url_index.get(norm)
+        if not canonical or norm in seen_norm:
+            continue
+        seen_norm.add(norm)
+        out.append(canonical)
+    return out
+
+
+def _resolve_allowed_source_url(
+    source_url: str, item_link: str, allowed_source_url_index: dict[str, str] | None
+) -> str:
+    if allowed_source_url_index is None:
+        return (source_url or "").strip() or (item_link or "").strip()
+    for raw in (source_url, item_link):
+        candidate = str(raw or "").strip()
+        if not candidate:
+            continue
+        norm = normalize_url_for_dedup(candidate)
+        if not norm:
+            continue
+        canonical = allowed_source_url_index.get(norm)
+        if canonical:
+            return canonical
+    return ""
+
+
+def _extract_urls_from_markdown(text: str) -> list[str]:
+    return _dedupe_urls(extract_urls_from_markdown(text))
+
+
+def _string_list(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(v).strip() for v in value if str(v).strip()]
+
+
+def _merge_unique(values: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        value = str(raw or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
+
+
+def _extract_brief_metadata(brief_path: Path) -> dict:
+    if not brief_path.exists():
+        return {"tags": [], "triage_backend": "unknown", "triage_model": "unknown"}
+    frontmatter, _ = split_frontmatter_and_body(brief_path.read_text(encoding="utf-8"))
+    tags = normalize_ai_tags(_string_list(frontmatter.get("tags")))
+    triage_backend = str(frontmatter.get("triage_backend") or "unknown").strip() or "unknown"
+    triage_model = str(frontmatter.get("triage_model") or "unknown").strip() or "unknown"
+    return {"tags": tags, "triage_backend": triage_backend, "triage_model": triage_model}
+
+
+def _with_source_footnotes(markdown: str, source_urls: list[str]) -> str:
+    body = (markdown or "").strip()
+    sources = _dedupe_urls(source_urls)
+    if not sources:
+        return body
+
+    markers = "".join(f"[^{i}]" for i in range(1, len(sources) + 1))
+    defs = "\n".join(f"[^{i}]: {u}" for i, u in enumerate(sources, start=1))
+
+    if body:
+        return f"{body} {markers}\n\n{defs}"
+    return f"{markers}\n\n{defs}"
+
+
+BULLET_LINE_RE = re.compile(r"^\s*[-*+]\s+")
+NUMBERED_LINE_RE = re.compile(r"^\s*\d+[.)]\s+")
+
+
+def _normalize_to_fact_bullets(markdown: str) -> str:
+    text = (markdown or "").strip()
+    if not text:
+        return ""
+
+    facts: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        if BULLET_LINE_RE.match(line):
+            fact = BULLET_LINE_RE.sub("", line, count=1).strip()
+            if fact:
+                facts.append(fact)
+            continue
+
+        if NUMBERED_LINE_RE.match(line):
+            fact = NUMBERED_LINE_RE.sub("", line, count=1).strip()
+            if fact:
+                facts.append(fact)
+            continue
+
+        if FOOTNOTE_DEF_LINE_RE.match(line):
+            continue
+
+        line = re.sub(r"^#{1,6}\s+", "", line).strip()
+        segments = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9\[])", line)
+        for seg in segments:
+            fact = seg.strip()
+            if fact:
+                facts.append(fact)
+
+    deduped = _merge_unique(facts)
+    return "\n".join(f"- {f}" for f in deduped)
+
+
+def _normalize_fact_for_match(text: str) -> str:
+    line = str(text or "").strip()
+    line = BULLET_LINE_RE.sub("", line, count=1)
+    line = NUMBERED_LINE_RE.sub("", line, count=1)
+    line = FOOTNOTE_MARKER_RE.sub("", line)
+    line = MENTIONS_SUFFIX_RE.sub("", line)
+    line = re.sub(r"\s+", " ", line).strip().lower()
+    return line
+
+
+def _extract_footnote_definitions(markdown: str) -> dict[int, str]:
+    definitions: dict[int, str] = {}
+    for raw_line in (markdown or "").splitlines():
+        m = FOOTNOTE_DEF_LINE_RE.match(raw_line.strip())
+        if not m:
+            continue
+        idx = int(m.group(1))
+        url = m.group(2).strip()
+        if idx not in definitions:
+            definitions[idx] = url
+    return definitions
+
+
+def _next_footnote_index(definitions: dict[int, str]) -> int:
+    return max(definitions.keys(), default=0) + 1
+
+
+def _split_body_and_footnote_definitions(markdown: str) -> tuple[str, dict[int, str]]:
+    body_lines: list[str] = []
+    definitions: dict[int, str] = {}
+    for raw_line in (markdown or "").splitlines():
+        m = FOOTNOTE_DEF_LINE_RE.match(raw_line.strip())
+        if not m:
+            body_lines.append(raw_line.rstrip())
+            continue
+        idx = int(m.group(1))
+        url = m.group(2).strip()
+        if idx not in definitions and url:
+            definitions[idx] = url
+    return "\n".join(body_lines).rstrip(), definitions
+
+
+def _compose_body_with_footnote_definitions(body: str, definitions: dict[int, str]) -> str:
+    body_text = (body or "").rstrip()
+    if not definitions:
+        return body_text
+    defs = "\n".join(f"[^{idx}]: {definitions[idx]}" for idx in sorted(definitions))
+    if not body_text:
+        return defs
+    return f"{body_text}\n\n{defs}"
+
+
+def _extract_fact_bullets(markdown: str) -> list[str]:
+    bullets: list[str] = []
+    for raw_line in (markdown or "").splitlines():
+        line = raw_line.strip()
+        if BULLET_LINE_RE.match(line):
+            bullets.append(line)
+    return bullets
+
+
+def _resolve_update_bullet_sources(
+    action: dict,
+    summary_addendum: str,
+    summary_bullets: list[str],
+    append_sources: list[str],
+    allowed_source_url_index: dict[str, str] | None,
+) -> list[str]:
+    explicit = action.get("summary_addendum_sources")
+    if isinstance(explicit, list):
+        mapped: list[str] = []
+        for raw in explicit:
+            canonical = _resolve_allowed_source_url(str(raw or "").strip(), "", allowed_source_url_index)
+            if not canonical:
+                raise ValueError("update action has summary_addendum but no source URLs")
+            mapped.append(canonical)
+        if len(mapped) != len(summary_bullets):
+            raise ValueError("update action has mismatched summary_addendum_sources length")
+        return mapped
+
+    fallback_sources = _filter_urls_to_allowed(
+        append_sources + _extract_urls_from_markdown(summary_addendum),
+        allowed_source_url_index,
+    )
+    if not fallback_sources:
+        raise ValueError("update action has summary_addendum but no source URLs")
+
+    resolved: list[str] = []
+    for idx, bullet in enumerate(summary_bullets):
+        bullet_url = ""
+        for candidate in _extract_urls_from_markdown(bullet):
+            canonical = _resolve_allowed_source_url(candidate, "", allowed_source_url_index)
+            if canonical:
+                bullet_url = canonical
+                break
+        if bullet_url:
+            resolved.append(bullet_url)
+            continue
+        if len(fallback_sources) == 1:
+            resolved.append(fallback_sources[0])
+            continue
+        if idx < len(fallback_sources):
+            resolved.append(fallback_sources[idx])
+            continue
+        raise ValueError("update action has summary_addendum but no source URLs")
+    return resolved
+
+
+def _attach_sources_to_bullets(
+    summary_bullets: list[str], bullet_sources: list[str], definitions: dict[int, str]
+) -> tuple[list[str], dict[int, str], list[str]]:
+    updated_defs = dict(definitions)
+    url_to_idx = {url: idx for idx, url in updated_defs.items()}
+    lines: list[str] = []
+    used_sources: list[str] = []
+    for bullet, source_url in zip(summary_bullets, bullet_sources):
+        clean_bullet = FOOTNOTE_MARKER_RE.sub("", bullet).strip()
+        source = str(source_url or "").strip()
+        if not source:
+            continue
+        marker_idx = url_to_idx.get(source)
+        if marker_idx is None:
+            marker_idx = _next_footnote_index(updated_defs)
+            updated_defs[marker_idx] = source
+            url_to_idx[source] = marker_idx
+        marker = f"[^{marker_idx}]"
+        spacer = "" if re.search(r"\[\^\d+\]\s*$", clean_bullet) else " "
+        lines.append(f"{clean_bullet}{spacer}{marker}")
+        used_sources.append(source)
+    return lines, updated_defs, used_sources
+
+
+def _append_to_gardner_updates_section(body: str, bullet_lines: list[str]) -> str:
+    if not bullet_lines:
+        return (body or "").rstrip()
+
+    lines = (body or "").splitlines()
+    section_header = "## Gardner updates"
+    section_idx = -1
+    for idx, line in enumerate(lines):
+        if line.strip().lower() == section_header.lower():
+            section_idx = idx
+            break
+
+    if section_idx < 0:
+        base = (body or "").rstrip()
+        block = "\n".join(bullet_lines)
+        if not base:
+            return f"{section_header}\n\n{block}"
+        return f"{base}\n\n{section_header}\n\n{block}"
+
+    section_start = section_idx + 1
+    section_end = len(lines)
+    for idx in range(section_start, len(lines)):
+        if re.match(r"^\s*##\s+", lines[idx]):
+            section_end = idx
+            break
+    section_lines = lines[section_start:section_end]
+    while section_lines and not section_lines[-1].strip():
+        section_lines.pop()
+    if section_lines:
+        section_lines.append("")
+    section_lines.extend(bullet_lines)
+    merged_lines = lines[:section_start] + section_lines + lines[section_end:]
+    return "\n".join(merged_lines).rstrip()
+
+
+def _apply_redundant_mention_to_body(body: str, matched_fact_bullet: str, source_url: str) -> tuple[str, str]:
+    lines = (body or "").splitlines()
+    target = _normalize_fact_for_match(matched_fact_bullet)
+    if not target:
+        return body, "invalid"
+
+    bullet_idx = -1
+    for idx, line in enumerate(lines):
+        if not BULLET_LINE_RE.match(line):
+            continue
+        if _normalize_fact_for_match(line) == target:
+            bullet_idx = idx
+            break
+    if bullet_idx < 0:
+        return body, "missing_bullet"
+
+    definitions = _extract_footnote_definitions(body)
+    url_to_idx = {u: i for i, u in definitions.items()}
+    source_url = str(source_url or "").strip()
+    if not source_url:
+        return body, "invalid"
+
+    changed = False
+    created_defs: list[tuple[int, str]] = []
+
+    line = lines[bullet_idx]
+    suffix_match = MENTIONS_SUFFIX_RE.search(line)
+    line_suffix = ""
+    if suffix_match:
+        line_without_suffix = line[:suffix_match.start()].rstrip()
+        line_suffix = line[suffix_match.start():]
+    else:
+        line_without_suffix = line.rstrip()
+    marker_indices = {int(x) for x in FOOTNOTE_MARKER_RE.findall(line_without_suffix)}
+    line_urls = {definitions[i] for i in marker_indices if i in definitions}
+
+    if source_url not in line_urls:
+        marker_idx = url_to_idx.get(source_url)
+        if marker_idx is None:
+            marker_idx = _next_footnote_index(definitions)
+            definitions[marker_idx] = source_url
+            url_to_idx[source_url] = marker_idx
+            created_defs.append((marker_idx, source_url))
+            changed = True
+
+        marker = f"[^{marker_idx}]"
+        if marker not in line_without_suffix:
+            spacer = "" if re.search(r"\[\^\d+\]\s*$", line_without_suffix) else " "
+            line_without_suffix = f"{line_without_suffix}{spacer}{marker}"
+            changed = True
+
+    updated_line = f"{line_without_suffix}{line_suffix}"
+    if updated_line != line:
+        lines[bullet_idx] = updated_line
+        changed = True
+
+    if not changed:
+        return body, "already_recorded"
+
+    updated_body = "\n".join(lines)
+    if created_defs:
+        defs_block = "\n".join(f"[^{idx}]: {url}" for idx, url in created_defs)
+        updated_body = f"{updated_body.rstrip()}\n\n{defs_block}"
+    return updated_body, "applied"
+
+
+def _apply_redundant_mentions(topics_dir: Path, mentions: list[dict], today: str) -> dict[str, int]:
+    stats = {
+        "mentions_input": len(mentions),
+        "mentions_applied": 0,
+        "mentions_already_recorded": 0,
+        "mentions_missing_topic": 0,
+        "mentions_missing_bullet": 0,
+        "mentions_invalid": 0,
+        "files_updated": 0,
+    }
+    if not mentions:
+        return stats
+
+    mentions_by_slug: dict[str, list[dict]] = {}
+    for raw in mentions:
+        if not isinstance(raw, dict):
+            stats["mentions_invalid"] += 1
+            continue
+        slug = re.sub(r"[^a-z0-9\-]", "", str(raw.get("topic_slug") or "").strip().lower().replace("_", "-"))
+        matched_fact_bullet = str(raw.get("matched_fact_bullet") or "").strip()
+        source_url = str(raw.get("source_url") or "").strip()
+        if not slug or not matched_fact_bullet or not source_url:
+            stats["mentions_invalid"] += 1
+            continue
+        mentions_by_slug.setdefault(slug, []).append(
+            {
+                "matched_fact_bullet": matched_fact_bullet,
+                "source_url": source_url,
+            }
+        )
+
+    for slug, slug_mentions in mentions_by_slug.items():
+        path = topics_dir / f"{slug}.md"
+        if not path.exists():
+            stats["mentions_missing_topic"] += len(slug_mentions)
+            continue
+        content = path.read_text(encoding="utf-8")
+        frontmatter, body = split_frontmatter_and_body(content)
+        updated_body = body
+        changed = False
+        sources_to_merge: list[str] = []
+        for mention in slug_mentions:
+            updated_body, status = _apply_redundant_mention_to_body(
+                updated_body,
+                mention["matched_fact_bullet"],
+                mention["source_url"],
+            )
+            if status == "applied":
+                stats["mentions_applied"] += 1
+                changed = True
+                sources_to_merge.append(mention["source_url"])
+            elif status == "already_recorded":
+                stats["mentions_already_recorded"] += 1
+            elif status == "missing_bullet":
+                stats["mentions_missing_bullet"] += 1
+            else:
+                stats["mentions_invalid"] += 1
+
+        if changed:
+            updated_frontmatter = dict(frontmatter)
+            updated_frontmatter["lastmod"] = today
+            updated_frontmatter["updated"] = today
+            existing_sources = _string_list(updated_frontmatter.get("sources"))
+            updated_frontmatter["sources"] = _dedupe_urls(existing_sources + sources_to_merge)
+            path.write_text(with_frontmatter(updated_body, updated_frontmatter), encoding="utf-8")
+            stats["files_updated"] += 1
+
+    return stats
 
 
 def _list_existing_topic_previews(topics_dir: Path, max_preview_chars: int = 400) -> list[dict]:
@@ -271,20 +903,14 @@ def _call_cursor_topic_gardener(brief_content: str, existing_topics: list[dict],
         brief_content=brief_content,
         existing_topics=existing_str,
     )
-    args = ["agent", "-p", "--output-format", "text", "--trust", prompt]
-    result = subprocess.run(args, capture_output=True, text=True, env=os.environ)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"cursor topic-gardener exit {result.returncode}: {result.stderr or result.stdout or 'no output'}"
-        )
-    response_text = (result.stdout or "").strip()
-    start = response_text.find("{")
-    end = response_text.rfind("}") + 1
-    if start < 0 or end <= start:
-        return []
     try:
-        parsed = json.loads(response_text[start:end])
-    except json.JSONDecodeError:
+        parsed = run_structured_prompt(
+            prompt,
+            schema=TOPIC_GARDENER_SCHEMA,
+            purpose="topic-gardener",
+            trust=True,
+        )
+    except ValueError:
         return []
     actions = parsed.get("topic_actions")
     if not isinstance(actions, list):
@@ -292,51 +918,113 @@ def _call_cursor_topic_gardener(brief_content: str, existing_topics: list[dict],
     return actions
 
 
-def _apply_topic_action(topics_dir: Path, action: dict, today: str) -> None:
+def _apply_topic_action(
+    topics_dir: Path,
+    action: dict,
+    today: str,
+    *,
+    default_tags: list[str] | None = None,
+    topic: str | None = None,
+    triage_backend: str = "unknown",
+    triage_model: str = "unknown",
+    allowed_source_url_index: dict[str, str] | None = None,
+) -> None:
     act = (action.get("action") or "").strip().lower()
     slug = (action.get("slug") or "").strip()
     if not slug or act not in ("create", "update"):
         return
     slug = re.sub(r"[^a-z0-9\-]", "", slug.lower().replace("_", "-")) or "untitled"
     path = topics_dir / f"{slug}.md"
+    default_tags = normalize_ai_tags(default_tags or [])
 
     if act == "create":
         title = (action.get("title") or slug).strip()
-        body_markdown = (action.get("body_markdown") or "").strip()
+        body_markdown = _normalize_to_fact_bullets((action.get("body_markdown") or "").strip())
+        if allowed_source_url_index is not None and body_markdown:
+            body_markdown, _ = sanitize_markdown_links(body_markdown, allowed_source_url_index)
         sources = action.get("sources") if isinstance(action.get("sources"), list) else []
         sources = [str(s).strip() for s in sources if str(s).strip()]
+        sources = _filter_urls_to_allowed(
+            sources + _extract_urls_from_markdown(body_markdown),
+            allowed_source_url_index,
+        )
         links_to = action.get("links_to") if isinstance(action.get("links_to"), list) else []
         links_to = [str(s).strip() for s in links_to if str(s).strip()]
-        frontmatter_lines = ["---", f'title: "{title}"', f'updated: "{today}"']
-        if sources:
-            frontmatter_lines.append("sources:")
-            for u in sources:
-                frontmatter_lines.append(f'  - "{u}"')
-        if links_to:
-            frontmatter_lines.append("links_to:")
-            for s in links_to:
-                frontmatter_lines.append(f'  - "{s}"')
-        frontmatter_lines.append("---")
-        path.write_text("\n".join(frontmatter_lines) + "\n\n" + body_markdown, encoding="utf-8")
+        action_tags = normalize_ai_tags(_string_list(action.get("tags")))
+        merged_tags = normalize_ai_tags(_merge_unique(action_tags + default_tags))
+        if body_markdown and not sources:
+            raise ValueError("create action has body_markdown but no source URLs")
+        body_with_footnotes = _with_source_footnotes(body_markdown, sources)
+        frontmatter = {
+            "title": title,
+            "date": today,
+            "lastmod": today,
+            "updated": today,
+            "tags": merged_tags,
+            "generator": "tocify-gardener",
+            "period": "evergreen",
+            "topic": topic or None,
+            "triage_backend": triage_backend,
+            "triage_model": triage_model,
+            "sources": sources,
+            "links_to": links_to,
+        }
+        path.write_text(with_frontmatter(body_with_footnotes, frontmatter), encoding="utf-8")
         return
 
     if act == "update" and path.exists():
+        existing_frontmatter, existing_body = split_frontmatter_and_body(path.read_text(encoding="utf-8"))
         append_sources = action.get("append_sources")
         if isinstance(append_sources, list):
             append_sources = [str(s).strip() for s in append_sources if str(s).strip()]
         else:
             append_sources = []
-        summary_addendum = (action.get("summary_addendum") or "").strip()
-        to_append = []
-        if summary_addendum:
-            to_append.append(f"\n\n## Recent update ({today})\n\n{summary_addendum}")
-        if append_sources:
-            to_append.append("\n\n### New sources\n\n" + "\n".join(f"- {u}" for u in append_sources))
-        if to_append:
-            existing = path.read_text(encoding="utf-8")
-            path.write_text(existing + "".join(to_append), encoding="utf-8")
+        summary_addendum = _normalize_to_fact_bullets((action.get("summary_addendum") or "").strip())
+        if allowed_source_url_index is not None and summary_addendum:
+            summary_addendum, _ = sanitize_markdown_links(summary_addendum, allowed_source_url_index)
+        summary_bullets = _extract_fact_bullets(summary_addendum)
+        if not summary_bullets:
+            return
+        action_tags = normalize_ai_tags(_string_list(action.get("tags")))
+        existing_tags = normalize_ai_tags(_string_list(existing_frontmatter.get("tags")))
+        merged_tags = normalize_ai_tags(_merge_unique(existing_tags + action_tags + default_tags))
+        bullet_sources = _resolve_update_bullet_sources(
+            action,
+            summary_addendum,
+            summary_bullets,
+            append_sources,
+            allowed_source_url_index,
+        )
+        body_without_defs, definitions = _split_body_and_footnote_definitions(existing_body)
+        footnoted_bullets, definitions, used_sources = _attach_sources_to_bullets(
+            summary_bullets,
+            bullet_sources,
+            definitions,
+        )
+        if not footnoted_bullets:
+            return
+        body_with_updates = _append_to_gardner_updates_section(body_without_defs, footnoted_bullets)
+        updated_body = _compose_body_with_footnote_definitions(body_with_updates, definitions)
+        existing_sources = _string_list(existing_frontmatter.get("sources"))
+        merged_sources = _dedupe_urls(existing_sources + used_sources)
+        frontmatter = dict(existing_frontmatter)
+        frontmatter["title"] = str(frontmatter.get("title") or slug).strip() or slug
+        frontmatter["date"] = str(frontmatter.get("date") or today)
+        frontmatter["lastmod"] = today
+        frontmatter["updated"] = today
+        frontmatter["tags"] = merged_tags
+        frontmatter["generator"] = "tocify-gardener"
+        frontmatter["period"] = str(frontmatter.get("period") or "evergreen")
+        frontmatter["topic"] = topic or frontmatter.get("topic")
+        frontmatter["triage_backend"] = triage_backend or str(frontmatter.get("triage_backend") or "unknown")
+        frontmatter["triage_model"] = triage_model or str(frontmatter.get("triage_model") or "unknown")
+        frontmatter["sources"] = merged_sources
+        links_to = _string_list(frontmatter.get("links_to"))
+        frontmatter["links_to"] = links_to
+        path.write_text(with_frontmatter(updated_body, frontmatter), encoding="utf-8")
 
 
+<<<<<<< HEAD
 def run_topic_gardener(
     topics_dir: Path,
     brief_path: Path,
@@ -368,6 +1056,7 @@ def run_topic_gardener(
             applied += 1
         except Exception as e:
             tqdm.write(f"[WARN] Topic gardener: failed to apply action {a.get('slug', '?')}: {e}")
+
     if applied > 0:
         tqdm.write(f"Topic gardener: applied {applied} topic action(s) under {topics_dir}")
 
@@ -378,8 +1067,12 @@ def render_brief_md(
     week_of = result["week_of"]
     notes = result.get("notes", "").strip()
     ranked = result.get("ranked", [])
+    today = datetime.now(timezone.utc).date().isoformat()
+    title = f"{topic.upper()} Weekly Brief (week of {week_of})"
+    triage_backend = str(result.get("triage_backend") or "unknown")
+    triage_model = str(result.get("triage_model") or "unknown")
 
-    lines = [f"# {topic.upper()} Weekly Brief (week of {week_of})", ""]
+    lines = [f"# {title}", ""]
     if notes:
         lines += [notes, ""]
     lines += [
@@ -409,7 +1102,74 @@ def render_brief_md(
         if summary:
             lines += ["<details>", "<summary>RSS summary</summary>", "", summary, "", "</details>", ""]
         lines += ["---", ""]
-    return "\n".join(lines)
+    body = "\n".join(lines)
+    frontmatter = {
+        "title": title,
+        "date": week_of,
+        "lastmod": today,
+        "tags": aggregate_ranked_item_tags(kept if kept else ranked),
+        "generator": "tocify-weekly",
+        "period": "weekly",
+        "topic": topic,
+        "week_of": week_of,
+        "included": len(kept),
+        "scored": len(ranked),
+        "triage_backend": triage_backend,
+        "triage_model": triage_model,
+    }
+    return with_frontmatter(body, frontmatter)
+
+
+def _load_weekly_link_resolver():
+    try:
+        from tocify.runner.link_resolution import resolve_weekly_heading_links
+
+        return resolve_weekly_heading_links
+    except Exception:
+        module_path = Path(__file__).resolve().with_name("link_resolution.py")
+        spec = importlib.util.spec_from_file_location("tocify_runner_link_resolution_runtime", module_path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"Failed to load link resolver module at {module_path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.resolve_weekly_heading_links
+
+
+def _build_weekly_link_metadata_rows(
+    brief_filename: str, kept: list[dict], items_by_id: dict[str, dict]
+) -> list[dict]:
+    rows: list[dict] = []
+    for ranked in kept:
+        item = items_by_id.get(ranked.get("id"), {})
+        title = str(ranked.get("title") or item.get("title") or "").strip()
+        if not title:
+            continue
+        canonical_url = str(item.get("link") or "").strip()
+        if not is_valid_http_url(canonical_url):
+            continue
+        rows.append(
+            {
+                "brief_filename": brief_filename,
+                "title": title,
+                "url": canonical_url,
+            }
+        )
+    return rows
+
+
+def _resolve_weekly_heading_links(md: str, brief_filename: str, rows: list[dict]) -> tuple[str, dict]:
+    resolver = _load_weekly_link_resolver()
+    return resolver(md, brief_filename, rows)
+
+
+def _build_weekly_allowed_url_index(kept: list[dict], items_by_id: dict[str, dict]) -> dict[str, str]:
+    canonical_urls: list[str] = []
+    for ranked in kept:
+        item = items_by_id.get(ranked.get("id"), {})
+        link = str(item.get("link") or "").strip()
+        if link:
+            canonical_urls.append(link)
+    return build_allowed_url_index(canonical_urls)
 
 
 def append_briefs_articles(
@@ -428,10 +1188,15 @@ def append_briefs_articles(
             writer.writeheader()
         for r in kept:
             it = items_by_id.get(r["id"], {})
+            canonical_url = str(it.get("link") or "").strip()
+            ranked_url = str(r.get("link") or "").strip()
+            row_url = canonical_url if is_valid_http_url(canonical_url) else ""
+            if not row_url and is_valid_http_url(ranked_url):
+                row_url = ranked_url
             row = {
                 "topic": topic,
                 "week_of": week_of,
-                "url": r.get("link") or it.get("link", ""),
+                "url": row_url,
                 "title": r.get("title") or it.get("title", ""),
                 "source": r.get("source") or it.get("source", ""),
                 "published_utc": r.get("published_utc") or it.get("published_utc") or "",
@@ -471,20 +1236,36 @@ def run_weekly(
             today.isocalendar()[0], today.isocalendar()[1], 1
         ).isoformat()
         end_date = None
+    triage_metadata = tocify.get_triage_runtime_metadata()
 
     items = tocify.fetch_rss_items(feeds, end_date=end_date)
-    tqdm.write(f"Fetched {len(items)} RSS items (pre-filter) [topic={topic}]")
+    print(f"Fetched {len(items)} RSS items (pre-filter) [topic={topic}]")
 
     paths.briefs_dir.mkdir(parents=True, exist_ok=True)
     brief_filename = f"{week_of}_{topic}_weekly-brief.md"
     brief_path = paths.briefs_dir / brief_filename
 
     if not items:
-        brief_path.write_text(
-            f"# {topic.upper()} Weekly Brief (week of {week_of})\n\n_No RSS items found in the last {LOOKBACK_DAYS} days._\n",
-            encoding="utf-8",
+        no_items_body = (
+            f"# {topic.upper()} Weekly Brief (week of {week_of})\n\n"
+            f"_No RSS items found in the last {LOOKBACK_DAYS} days._\n"
         )
-        tqdm.write(f"No items; wrote {brief_path}")
+        no_items_frontmatter = {
+            "title": f"{topic.upper()} Weekly Brief (week of {week_of})",
+            "date": week_of,
+            "lastmod": datetime.now(timezone.utc).date().isoformat(),
+            "tags": [],
+            "generator": "tocify-weekly",
+            "period": "weekly",
+            "topic": topic,
+            "week_of": week_of,
+            "included": 0,
+            "scored": 0,
+            "triage_backend": triage_metadata["triage_backend"],
+            "triage_model": triage_metadata["triage_model"],
+        }
+        brief_path.write_text(with_frontmatter(no_items_body, no_items_frontmatter), encoding="utf-8")
+        print(f"No items; wrote {brief_path}")
         return
 
     items = tocify.keyword_prefilter(
@@ -506,27 +1287,31 @@ def run_weekly(
     before_cross = len(items)
     items = [it for it in items if normalize_url_for_dedup((it.get("link") or "").strip()) not in briefs_urls]
     if before_cross > len(items):
-        tqdm.write(f"Cross-week filter: dropped {before_cross - len(items)} items, {len(items)} remaining")
+        print(f"Cross-week filter: dropped {before_cross - len(items)} items, {len(items)} remaining")
 
-    topics_dir = root / "topics"
+    topics_dir = root / "content" / "topics"
+    allowed_source_url_index = _build_allowed_source_url_index(items)
+    redundant_mentions: list[dict] = []
     if TOPIC_REDUNDANCY_ENABLED and items:
         topics_dir.mkdir(parents=True, exist_ok=True)
     if TOPIC_REDUNDANCY_ENABLED and topics_dir.exists() and items:
         topic_paths = load_recent_topic_files(topics_dir, TOPIC_REDUNDANCY_LOOKBACK_DAYS)
         if topic_paths:
-            tqdm.write(f"Topic redundancy: checking {len(items)} items against {len(topic_paths)} topic file(s)")
-            items, dropped = filter_topic_redundant_items(
-                topic_paths,
-                items,
-                TOPIC_REDUNDANCY_BATCH_SIZE,
-                redundancy_log_path=paths.logs_dir / "rss_redundancy_result.json",
+            print(f"Topic redundancy: checking {len(items)} items against {len(topic_paths)} topic file(s)")
+            items, dropped, redundant_mentions = filter_topic_redundant_items(
+                topic_paths, items, TOPIC_REDUNDANCY_BATCH_SIZE, allowed_source_url_index=allowed_source_url_index
             )
             if dropped > 0:
-                tqdm.write(f"Topic redundancy: dropped {dropped} items, {len(items)} remaining")
+                print(f"Topic redundancy: dropped {dropped} items, {len(items)} remaining")
+            if redundant_mentions:
+                print(
+                    f"Topic redundancy: identified {len(redundant_mentions)} repeated-fact mention(s) "
+                    "(topic citation updates disabled)"
+                )
 
     if dry_run:
         items = items[:dry_run]
-        tqdm.write(f"Dry run: capped to {len(items)} items (no CSV append)")
+        print(f"Dry run: capped to {len(items)} items (no CSV append)")
 
     tqdm.write(f"Sending {len(items)} RSS items to model (post-filter)")
 
@@ -540,19 +1325,42 @@ def run_weekly(
 
     items_by_id = {it["id"]: it for it in items}
 
-    if not os.environ.get("CURSOR_API_KEY", "").strip():
-        raise RuntimeError("CURSOR_API_KEY must be set.")
-
     os.environ["TOCIFY_PROMPT_PATH"] = str(paths.prompt_path)
-    triage_fn = tocify.get_triage_backend()
+    triage_fn, triage_metadata = tocify.get_triage_backend_with_metadata()
     result = tocify.triage_in_batches(interests, items, BATCH_SIZE, triage_fn)
     result["week_of"] = week_of
+    result["triage_backend"] = triage_metadata["triage_backend"]
+    result["triage_model"] = triage_metadata["triage_model"]
 
     ranked = result.get("ranked", [])
     kept = [r for r in ranked if r["score"] >= MIN_SCORE_READ][:MAX_RETURNED]
     md = render_brief_md(result, items_by_id, kept, topic)
+    allowed_heading_url_index = _build_weekly_allowed_url_index(kept, items_by_id)
+    link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
+    try:
+        md, link_stats = _resolve_weekly_heading_links(md, brief_filename, link_rows)
+        print(
+            "Link resolver: "
+            f"exact={link_stats['exact_matches']}, "
+            f"normalized={link_stats['normalized_matches']}, "
+            f"ambiguous={link_stats['ambiguous']}, "
+            f"missing={link_stats['missing']}, "
+            f"invalid_url={link_stats['invalid_url']}, "
+            f"unchanged={link_stats['unchanged']}"
+        )
+    except Exception as e:
+        print(f"[WARN] Link resolver failed; applying strict de-link fallback: {e}")
+    md, hygiene_stats = sanitize_markdown_links(md, allowed_heading_url_index)
+    print(
+        "Link hygiene: "
+        f"kept={hygiene_stats['kept']}, "
+        f"rewritten={hygiene_stats['rewritten']}, "
+        f"delinked={hygiene_stats['delinked']}, "
+        f"invalid={hygiene_stats['invalid']}, "
+        f"unmatched={hygiene_stats['unmatched']}"
+    )
     brief_path.write_text(md, encoding="utf-8")
-    tqdm.write(f"Wrote {brief_path}")
+    print(f"Wrote {brief_path}")
 
     if not dry_run and kept:
         append_briefs_articles(
@@ -567,7 +1375,13 @@ def run_weekly(
 
     if TOPIC_GARDENER_ENABLED and not dry_run and kept:
         topics_dir.mkdir(parents=True, exist_ok=True)
+        kept_items_for_sources = [
+            {"link": (r.get("link") or items_by_id.get(r.get("id"), {}).get("link") or "").strip()}
+            for r in kept
+        ]
         run_topic_gardener(
-            topics_dir, brief_path, topic,
-            logs_dir=paths.logs_dir, week_of=week_of,
+            topics_dir,
+            brief_path,
+            topic,
+            allowed_source_url_index=_build_allowed_source_url_index(kept_items_for_sources),
         )
