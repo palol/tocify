@@ -35,10 +35,16 @@ def _load_weekly_module():
     frontmatter_mod = importlib.util.module_from_spec(fm_spec)
     assert fm_spec and fm_spec.loader
     fm_spec.loader.exec_module(frontmatter_mod)
+    link_hygiene_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "link_hygiene.py"
+    lh_spec = importlib.util.spec_from_file_location("tocify.runner.link_hygiene", link_hygiene_path)
+    link_hygiene_mod = importlib.util.module_from_spec(lh_spec)
+    assert lh_spec and lh_spec.loader
+    lh_spec.loader.exec_module(link_hygiene_mod)
 
     sys.modules.setdefault("tocify", tocify_mod)
     sys.modules.setdefault("tocify.runner", runner_mod)
     sys.modules["tocify.runner.vault"] = vault_mod
+    sys.modules["tocify.runner.link_hygiene"] = link_hygiene_mod
     sys.modules["tocify.frontmatter"] = frontmatter_mod
     sys.modules.setdefault("dotenv", dotenv_mod)
     sys.modules.setdefault("newspaper", newspaper_mod)
@@ -210,6 +216,32 @@ class TopicGardenerFootnoteTests(unittest.TestCase):
             self.assertIn("[^1]: https://example.com/a", content)
             self.assertNotIn("fake.example.com/bad", content)
 
+    def test_create_delinks_untrusted_inline_urls_when_allowlist_is_provided(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            allowed = WEEKLY._build_allowed_source_url_index([{"link": "https://example.com/a"}])
+            _apply_topic_action(
+                tmp_path,
+                {
+                    "action": "create",
+                    "slug": "links",
+                    "title": "Links",
+                    "body_markdown": (
+                        "- Trusted source: https://example.com/a\n"
+                        "- Untrusted source: https://fake.example.com/b"
+                    ),
+                    "sources": [],
+                    "links_to": [],
+                },
+                "2026-02-20",
+                allowed_source_url_index=allowed,
+            )
+            content = _read(tmp_path / "links.md")
+
+        self.assertIn("https://example.com/a", content)
+        self.assertNotIn("https://fake.example.com/b", content)
+        self.assertIn("(link removed)", content)
+
     def test_update_with_non_allowed_summary_url_raises(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             tmp_path = Path(td)
@@ -269,6 +301,32 @@ class TopicGardenerFootnoteTests(unittest.TestCase):
             content = _read(topic_file)
             self.assertIn("Details are in https://example.com/report. [^1]", content)
             self.assertIn("[^1]: https://example.com/report", content)
+
+    def test_update_delinks_untrusted_inline_urls_when_allowlist_is_provided(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            topic_file = tmp_path / "bci.md"
+            topic_file.write_text("---\ntitle: \"BCI\"\n---\n\nBase content.", encoding="utf-8")
+            allowed = WEEKLY._build_allowed_source_url_index([{"link": "https://example.com/allowed"}])
+            _apply_topic_action(
+                tmp_path,
+                {
+                    "action": "update",
+                    "slug": "bci",
+                    "summary_addendum": (
+                        "Trusted note at https://example.com/allowed. "
+                        "Ignore https://fake.example.com/untrusted."
+                    ),
+                    "append_sources": ["https://example.com/allowed"],
+                },
+                "2026-02-20",
+                allowed_source_url_index=allowed,
+            )
+            content = _read(topic_file)
+
+        self.assertIn("https://example.com/allowed", content)
+        self.assertNotIn("https://fake.example.com/untrusted", content)
+        self.assertIn("(link removed)", content)
 
     def test_update_with_sources_only_does_not_append_source_refresh(self) -> None:
         with tempfile.TemporaryDirectory() as td:

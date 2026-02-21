@@ -70,10 +70,16 @@ def _load_weekly_module():
     frontmatter_mod = importlib.util.module_from_spec(fm_spec)
     assert fm_spec and fm_spec.loader
     fm_spec.loader.exec_module(frontmatter_mod)
+    link_hygiene_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "link_hygiene.py"
+    lh_spec = importlib.util.spec_from_file_location("tocify.runner.link_hygiene", link_hygiene_path)
+    link_hygiene_mod = importlib.util.module_from_spec(lh_spec)
+    assert lh_spec and lh_spec.loader
+    lh_spec.loader.exec_module(link_hygiene_mod)
 
     sys.modules["tocify"] = tocify_mod
     sys.modules["tocify.runner"] = runner_mod
     sys.modules["tocify.runner.vault"] = vault_mod
+    sys.modules["tocify.runner.link_hygiene"] = link_hygiene_mod
     sys.modules["tocify.frontmatter"] = frontmatter_mod
     sys.modules["dotenv"] = dotenv_mod
     sys.modules["newspaper"] = newspaper_mod
@@ -110,7 +116,7 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
         self.assertIn("## [Paper A](https://canonical.example.com/a)", content)
         self.assertNotIn("## [Paper A](https://fake.example.com/a)", content)
 
-    def test_run_weekly_keeps_rendered_link_when_resolver_errors(self) -> None:
+    def test_run_weekly_delinks_untrusted_heading_when_resolver_errors(self) -> None:
         weekly = _load_weekly_module()
         weekly.TOPIC_REDUNDANCY_ENABLED = False
         weekly.TOPIC_GARDENER_ENABLED = False
@@ -128,7 +134,8 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
         finally:
             weekly._resolve_weekly_heading_links = original_resolver
 
-        self.assertIn("## [Paper A](https://fake.example.com/a)", content)
+        self.assertIn("## Paper A", content)
+        self.assertNotIn("https://fake.example.com/a", content)
 
 
 if __name__ == "__main__":

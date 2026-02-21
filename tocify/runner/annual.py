@@ -8,6 +8,11 @@ from pathlib import Path
 from tqdm import tqdm
 
 from tocify.frontmatter import aggregate_ai_tags, normalize_ai_tags, split_frontmatter_and_body, with_frontmatter
+from tocify.runner.link_hygiene import (
+    build_allowed_url_index,
+    extract_urls_from_markdown,
+    sanitize_markdown_links,
+)
 from tocify.runner.vault import (
     get_topic_paths,
     load_monthly_roundups_for_year,
@@ -84,6 +89,25 @@ def _collect_source_metadata(paths: list[Path]) -> dict:
     return metadata
 
 
+def _build_allowed_url_index_from_sources(paths: list[Path]) -> dict[str, str]:
+    urls: list[str] = []
+    for path in paths:
+        if not path.exists():
+            continue
+        urls.extend(extract_urls_from_markdown(path.read_text(encoding="utf-8")))
+    return build_allowed_url_index(urls)
+
+
+def _sanitize_output_links(output_path: Path, allowed_source_url_index: dict[str, str]) -> dict:
+    if not output_path.exists():
+        return {"kept": 0, "rewritten": 0, "delinked": 0, "invalid": 0, "unmatched": 0}
+    raw = output_path.read_text(encoding="utf-8")
+    sanitized, stats = sanitize_markdown_links(raw, allowed_source_url_index)
+    if sanitized != raw:
+        output_path.write_text(sanitized, encoding="utf-8")
+    return stats
+
+
 def _apply_annual_frontmatter(
     output_path: Path,
     *,
@@ -123,6 +147,7 @@ def main(
     roundup_paths = load_monthly_roundups_for_year(year, topic, vault_root=root)
     if not roundup_paths:
         raise SystemExit(f"[ERROR] No monthly roundups found for year {year}")
+    allowed_source_url_index = _build_allowed_url_index_from_sources(roundup_paths)
 
     if len(roundup_paths) < 12:
         tqdm.write(f"[WARN] Only {len(roundup_paths)} monthly roundups for {year} (partial year)")
@@ -160,6 +185,16 @@ def main(
             encoding="utf-8",
         )
         log_path.write_text(f"Annual review generation failed: {e}", encoding="utf-8")
+
+    link_stats = _sanitize_output_links(output_path, allowed_source_url_index)
+    print(
+        "[INFO] Link hygiene: "
+        f"kept={link_stats['kept']}, "
+        f"rewritten={link_stats['rewritten']}, "
+        f"delinked={link_stats['delinked']}, "
+        f"invalid={link_stats['invalid']}, "
+        f"unmatched={link_stats['unmatched']}"
+    )
 
     _apply_annual_frontmatter(
         output_path,

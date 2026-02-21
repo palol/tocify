@@ -56,16 +56,53 @@ def _load_monthly_module(frontmatter_module):
     weeks_mod.get_month_metadata = lambda month: (Path(month), Path(month), month)
     tqdm_mod = types.ModuleType("tqdm")
     tqdm_mod.tqdm = types.SimpleNamespace(write=lambda *_args, **_kwargs: None)
+    link_hygiene_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "link_hygiene.py"
+    lh_spec = importlib.util.spec_from_file_location("tocify.runner.link_hygiene", link_hygiene_path)
+    link_hygiene_mod = importlib.util.module_from_spec(lh_spec)
+    assert lh_spec and lh_spec.loader
+    lh_spec.loader.exec_module(link_hygiene_mod)
 
     sys.modules["tocify"] = tocify_mod
     sys.modules["tocify.runner"] = runner_mod
     sys.modules["tocify.runner.vault"] = vault_mod
     sys.modules["tocify.runner.weeks"] = weeks_mod
+    sys.modules["tocify.runner.link_hygiene"] = link_hygiene_mod
     sys.modules["tocify.frontmatter"] = frontmatter_module
     sys.modules["tqdm"] = tqdm_mod
 
     monthly_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "monthly.py"
     spec = importlib.util.spec_from_file_location("monthly_under_test", monthly_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_annual_module(frontmatter_module):
+    tocify_mod = types.ModuleType("tocify")
+    runner_mod = types.ModuleType("tocify.runner")
+    vault_mod = types.ModuleType("tocify.runner.vault")
+    vault_mod.get_topic_paths = lambda *args, **kwargs: None
+    vault_mod.load_monthly_roundups_for_year = lambda *args, **kwargs: []
+    vault_mod.run_agent_and_save_output = lambda *args, **kwargs: None
+    vault_mod.VAULT_ROOT = Path(".")
+    tqdm_mod = types.ModuleType("tqdm")
+    tqdm_mod.tqdm = types.SimpleNamespace(write=lambda *_args, **_kwargs: None)
+    link_hygiene_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "link_hygiene.py"
+    lh_spec = importlib.util.spec_from_file_location("tocify.runner.link_hygiene", link_hygiene_path)
+    link_hygiene_mod = importlib.util.module_from_spec(lh_spec)
+    assert lh_spec and lh_spec.loader
+    lh_spec.loader.exec_module(link_hygiene_mod)
+
+    sys.modules["tocify"] = tocify_mod
+    sys.modules["tocify.runner"] = runner_mod
+    sys.modules["tocify.runner.vault"] = vault_mod
+    sys.modules["tocify.runner.link_hygiene"] = link_hygiene_mod
+    sys.modules["tocify.frontmatter"] = frontmatter_module
+    sys.modules["tqdm"] = tqdm_mod
+
+    annual_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "annual.py"
+    spec = importlib.util.spec_from_file_location("annual_under_test", annual_path)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
     spec.loader.exec_module(module)
@@ -84,6 +121,7 @@ def _load_integrations_module():
 FRONTMATTER = _load_frontmatter_module()
 DIGEST = _load_digest_module(FRONTMATTER)
 MONTHLY = _load_monthly_module(FRONTMATTER)
+ANNUAL = _load_annual_module(FRONTMATTER)
 INTEGRATIONS = _load_integrations_module()
 
 
@@ -197,6 +235,54 @@ title: \"Old\"
         self.assertEqual(frontmatter["title"], "New")
         self.assertEqual(frontmatter["tags"], ["neuro"])
         self.assertIn("# Body", body)
+
+    def test_monthly_link_hygiene_keeps_trusted_and_delinks_untrusted(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source = root / "weekly.md"
+            source.write_text("## [Paper A](https://example.com/a)\n", encoding="utf-8")
+            output = root / "monthly.md"
+            output.write_text(
+                (
+                    "Trusted: [Paper A](https://example.com/a)\n"
+                    "Untrusted: [Paper B](https://fake.example.com/b)\n"
+                    "Raw fake: https://fake.example.com/raw.\n"
+                ),
+                encoding="utf-8",
+            )
+            allowed = MONTHLY._build_allowed_url_index_from_sources([source])
+            stats = MONTHLY._sanitize_output_links(output, allowed)
+            sanitized = output.read_text(encoding="utf-8")
+
+        self.assertIn("[Paper A](https://example.com/a)", sanitized)
+        self.assertIn("Untrusted: Paper B", sanitized)
+        self.assertNotIn("https://fake.example.com/b", sanitized)
+        self.assertNotIn("https://fake.example.com/raw", sanitized)
+        self.assertGreaterEqual(stats["delinked"], 2)
+
+    def test_annual_link_hygiene_keeps_trusted_and_delinks_untrusted(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source = root / "roundup.md"
+            source.write_text("Reference: https://example.com/allowed\n", encoding="utf-8")
+            output = root / "annual.md"
+            output.write_text(
+                (
+                    "Allowed raw: https://example.com/allowed\n"
+                    "Untrusted raw: https://fake.example.com/blocked\n"
+                    "Untrusted md: [Blocked](https://fake.example.com/blocked-md)\n"
+                ),
+                encoding="utf-8",
+            )
+            allowed = ANNUAL._build_allowed_url_index_from_sources([source])
+            stats = ANNUAL._sanitize_output_links(output, allowed)
+            sanitized = output.read_text(encoding="utf-8")
+
+        self.assertIn("https://example.com/allowed", sanitized)
+        self.assertNotIn("https://fake.example.com/blocked", sanitized)
+        self.assertNotIn("https://fake.example.com/blocked-md", sanitized)
+        self.assertIn("Untrusted md: Blocked", sanitized)
+        self.assertGreaterEqual(stats["delinked"], 2)
 
     def test_runtime_metadata_resolves_backend_and_model(self) -> None:
         env = {

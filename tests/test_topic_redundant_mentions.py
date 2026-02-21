@@ -59,10 +59,16 @@ def _load_weekly_module():
     frontmatter_mod = importlib.util.module_from_spec(fm_spec)
     assert fm_spec and fm_spec.loader
     fm_spec.loader.exec_module(frontmatter_mod)
+    link_hygiene_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "link_hygiene.py"
+    lh_spec = importlib.util.spec_from_file_location("tocify.runner.link_hygiene", link_hygiene_path)
+    link_hygiene_mod = importlib.util.module_from_spec(lh_spec)
+    assert lh_spec and lh_spec.loader
+    lh_spec.loader.exec_module(link_hygiene_mod)
 
     sys.modules["tocify"] = tocify_mod
     sys.modules["tocify.runner"] = runner_mod
     sys.modules["tocify.runner.vault"] = vault_mod
+    sys.modules["tocify.runner.link_hygiene"] = link_hygiene_mod
     sys.modules["tocify.frontmatter"] = frontmatter_mod
     sys.modules["dotenv"] = dotenv_mod
     sys.modules["newspaper"] = newspaper_mod

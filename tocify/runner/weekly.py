@@ -10,7 +10,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import date, datetime, time as dt_time, timezone, timedelta
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from dotenv import load_dotenv
 try:
@@ -24,6 +23,13 @@ from tocify.frontmatter import (
     normalize_ai_tags,
     split_frontmatter_and_body,
     with_frontmatter,
+)
+from tocify.runner.link_hygiene import (
+    build_allowed_url_index,
+    extract_urls_from_markdown,
+    is_valid_http_url,
+    normalize_url_for_match,
+    sanitize_markdown_links,
 )
 from tocify.runner.vault import VAULT_ROOT, get_topic_paths, run_structured_prompt
 
@@ -51,11 +57,6 @@ BRIEFS_ARTICLES_COLUMNS = [
     "why", "tags",
 ]
 
-TRACKING_PARAMS = frozenset({
-    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-    "fbclid", "gclid", "msclkid", "ref", "mc_cid", "mc_eid", "_ga",
-})
-URL_IN_TEXT_RE = re.compile(r"https?://[^\s<>()\]\}]+", re.IGNORECASE)
 FOOTNOTE_DEF_LINE_RE = re.compile(r"^\[\^(\d+)\]:\s*(\S+)\s*$")
 FOOTNOTE_MARKER_RE = re.compile(r"\[\^(\d+)\]")
 MENTIONS_SUFFIX_RE = re.compile(r"\s*_\(\s*mentions:\s*\d+\s+sources?\s*\)_\s*$", re.IGNORECASE)
@@ -75,15 +76,7 @@ def parse_week_spec(s: str) -> str:
 
 
 def normalize_url_for_dedup(url: str) -> str:
-    if not (url or url.strip()):
-        return ""
-    s = url.strip()
-    parsed = urlparse(s)
-    query = parse_qs(parsed.query, keep_blank_values=False)
-    filtered = {k: v for k, v in query.items() if k.lower() not in TRACKING_PARAMS}
-    new_query = urlencode(sorted(filtered.items()), doseq=True)
-    no_fragment = parsed._replace(query=new_query, fragment="")
-    return urlunparse(no_fragment)
+    return normalize_url_for_match(url)
 
 
 def load_briefs_articles_urls(csv_path: Path, topic: str | None = None) -> set[str]:
@@ -427,14 +420,7 @@ def _dedupe_urls(urls: list[str]) -> list[str]:
 
 def _build_allowed_source_url_index(items: list[dict]) -> dict[str, str]:
     """Map normalized URL -> canonical metadata URL from item links."""
-    index: dict[str, str] = {}
-    for item in items:
-        link = str(item.get("link") or "").strip()
-        norm = normalize_url_for_dedup(link)
-        if not norm or norm in index:
-            continue
-        index[norm] = link
-    return index
+    return build_allowed_url_index([str(item.get("link") or "").strip() for item in items])
 
 
 def _filter_urls_to_allowed(urls: list[str], allowed_source_url_index: dict[str, str] | None) -> list[str]:
@@ -474,12 +460,7 @@ def _resolve_allowed_source_url(
 
 
 def _extract_urls_from_markdown(text: str) -> list[str]:
-    urls = []
-    for m in URL_IN_TEXT_RE.findall(text or ""):
-        u = m.rstrip(".,;:!?)\"'")
-        if u:
-            urls.append(u)
-    return _dedupe_urls(urls)
+    return _dedupe_urls(extract_urls_from_markdown(text))
 
 
 def _string_list(value) -> list[str]:
@@ -933,6 +914,8 @@ def _apply_topic_action(
     if act == "create":
         title = (action.get("title") or slug).strip()
         body_markdown = _normalize_to_fact_bullets((action.get("body_markdown") or "").strip())
+        if allowed_source_url_index is not None and body_markdown:
+            body_markdown, _ = sanitize_markdown_links(body_markdown, allowed_source_url_index)
         sources = action.get("sources") if isinstance(action.get("sources"), list) else []
         sources = [str(s).strip() for s in sources if str(s).strip()]
         sources = _filter_urls_to_allowed(
@@ -971,6 +954,8 @@ def _apply_topic_action(
         else:
             append_sources = []
         summary_addendum = _normalize_to_fact_bullets((action.get("summary_addendum") or "").strip())
+        if allowed_source_url_index is not None and summary_addendum:
+            summary_addendum, _ = sanitize_markdown_links(summary_addendum, allowed_source_url_index)
         summary_bullets = _extract_fact_bullets(summary_addendum)
         if not summary_bullets:
             return
@@ -1133,15 +1118,13 @@ def _build_weekly_link_metadata_rows(
         if not title:
             continue
         canonical_url = str(item.get("link") or "").strip()
-        fallback_url = str(ranked.get("link") or "").strip()
-        url = canonical_url or fallback_url
-        if not url:
+        if not is_valid_http_url(canonical_url):
             continue
         rows.append(
             {
                 "brief_filename": brief_filename,
                 "title": title,
-                "url": url,
+                "url": canonical_url,
             }
         )
     return rows
@@ -1150,6 +1133,16 @@ def _build_weekly_link_metadata_rows(
 def _resolve_weekly_heading_links(md: str, brief_filename: str, rows: list[dict]) -> tuple[str, dict]:
     resolver = _load_weekly_link_resolver()
     return resolver(md, brief_filename, rows)
+
+
+def _build_weekly_allowed_url_index(kept: list[dict], items_by_id: dict[str, dict]) -> dict[str, str]:
+    canonical_urls: list[str] = []
+    for ranked in kept:
+        item = items_by_id.get(ranked.get("id"), {})
+        link = str(item.get("link") or "").strip()
+        if link:
+            canonical_urls.append(link)
+    return build_allowed_url_index(canonical_urls)
 
 
 def append_briefs_articles(
@@ -1168,10 +1161,15 @@ def append_briefs_articles(
             writer.writeheader()
         for r in kept:
             it = items_by_id.get(r["id"], {})
+            canonical_url = str(it.get("link") or "").strip()
+            ranked_url = str(r.get("link") or "").strip()
+            row_url = canonical_url if is_valid_http_url(canonical_url) else ""
+            if not row_url and is_valid_http_url(ranked_url):
+                row_url = ranked_url
             row = {
                 "topic": topic,
                 "week_of": week_of,
-                "url": r.get("link") or it.get("link", ""),
+                "url": row_url,
                 "title": r.get("title") or it.get("title", ""),
                 "source": r.get("source") or it.get("source", ""),
                 "published_utc": r.get("published_utc") or it.get("published_utc") or "",
@@ -1313,6 +1311,7 @@ def run_weekly(
     ranked = result.get("ranked", [])
     kept = [r for r in ranked if r["score"] >= MIN_SCORE_READ][:MAX_RETURNED]
     md = render_brief_md(result, items_by_id, kept, topic)
+    allowed_heading_url_index = _build_weekly_allowed_url_index(kept, items_by_id)
     link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
     try:
         md, link_stats = _resolve_weekly_heading_links(md, brief_filename, link_rows)
@@ -1326,7 +1325,16 @@ def run_weekly(
             f"unchanged={link_stats['unchanged']}"
         )
     except Exception as e:
-        print(f"[WARN] Link resolver failed; keeping rendered links unchanged: {e}")
+        print(f"[WARN] Link resolver failed; applying strict de-link fallback: {e}")
+    md, hygiene_stats = sanitize_markdown_links(md, allowed_heading_url_index)
+    print(
+        "Link hygiene: "
+        f"kept={hygiene_stats['kept']}, "
+        f"rewritten={hygiene_stats['rewritten']}, "
+        f"delinked={hygiene_stats['delinked']}, "
+        f"invalid={hygiene_stats['invalid']}, "
+        f"unmatched={hygiene_stats['unmatched']}"
+    )
     brief_path.write_text(md, encoding="utf-8")
     print(f"Wrote {brief_path}")
 
