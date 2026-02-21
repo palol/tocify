@@ -12,6 +12,7 @@ def _load_weekly_module():
     vault_mod = types.ModuleType("tocify.runner.vault")
     vault_mod.get_topic_paths = lambda *args, **kwargs: None
     vault_mod.VAULT_ROOT = Path(".")
+    vault_mod.run_structured_prompt = lambda *_args, **_kwargs: {}
     dotenv_mod = types.ModuleType("dotenv")
     dotenv_mod.load_dotenv = lambda *args, **kwargs: None
     newspaper_mod = types.ModuleType("newspaper")

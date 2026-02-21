@@ -5,7 +5,6 @@ import json
 import math
 import os
 import re
-import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import date, datetime, time as dt_time, timezone, timedelta
@@ -25,7 +24,7 @@ from tocify.frontmatter import (
     split_frontmatter_and_body,
     with_frontmatter,
 )
-from tocify.runner.vault import get_topic_paths, VAULT_ROOT
+from tocify.runner.vault import VAULT_ROOT, get_topic_paths, run_structured_prompt
 
 load_dotenv()
 
@@ -176,6 +175,29 @@ Rules for redundant_mentions:
 - If no repeated-fact match is available, use an empty list.
 List the "id" of each candidate item that is redundant."""
 
+TOPIC_REDUNDANCY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "redundant_ids": {"type": "array", "items": {"type": "string"}},
+        "redundant_mentions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "topic_slug": {"type": "string"},
+                    "matched_fact_bullet": {"type": "string"},
+                    "source_url": {"type": "string"},
+                },
+                "required": ["id", "topic_slug", "matched_fact_bullet", "source_url"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["redundant_ids", "redundant_mentions"],
+    "additionalProperties": False,
+}
+
 
 def _call_cursor_topic_redundancy(topic_paths: list[Path], items: list[dict]) -> tuple[set[str], list[dict]]:
     if not topic_paths or not items:
@@ -195,20 +217,14 @@ def _call_cursor_topic_redundancy(topic_paths: list[Path], items: list[dict]) ->
         topic_refs=topic_refs,
         items_json=json.dumps(lean_items, ensure_ascii=False),
     )
-    args = ["agent", "-p", "--output-format", "text", "--trust", prompt]
-    result = subprocess.run(args, capture_output=True, text=True, env=os.environ)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"cursor topic-redundancy exit {result.returncode}: {result.stderr or result.stdout or 'no output'}"
-        )
-    response_text = (result.stdout or "").strip()
-    start = response_text.find("{")
-    end = response_text.rfind("}") + 1
-    if start < 0 or end <= start:
-        return set(), []
     try:
-        parsed = json.loads(response_text[start:end])
-    except json.JSONDecodeError:
+        parsed = run_structured_prompt(
+            prompt,
+            schema=TOPIC_REDUNDANCY_SCHEMA,
+            purpose="topic-redundancy",
+            trust=True,
+        )
+    except ValueError:
         return set(), []
     redundant = parsed.get("redundant_ids")
     if not isinstance(redundant, list):
@@ -310,6 +326,33 @@ Bullet examples for markdown fields:
 - body_markdown: "- Fact one.\\n- Fact two."
 - summary_addendum: "- New finding one.\\n- New finding two."
 Omit topic_actions or use [] if nothing to do."""
+
+TOPIC_GARDENER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "topic_actions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["create", "update"]},
+                    "slug": {"type": "string"},
+                    "title": {"type": "string"},
+                    "body_markdown": {"type": "string"},
+                    "sources": {"type": "array", "items": {"type": "string"}},
+                    "links_to": {"type": "array", "items": {"type": "string"}},
+                    "append_sources": {"type": "array", "items": {"type": "string"}},
+                    "summary_addendum": {"type": "string"},
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["action", "slug"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["topic_actions"],
+    "additionalProperties": False,
+}
 
 
 def _dedupe_urls(urls: list[str]) -> list[str]:
@@ -607,20 +650,14 @@ def _call_cursor_topic_gardener(brief_content: str, existing_topics: list[dict],
         brief_content=brief_content,
         existing_topics=existing_str,
     )
-    args = ["agent", "-p", "--output-format", "text", "--trust", prompt]
-    result = subprocess.run(args, capture_output=True, text=True, env=os.environ)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"cursor topic-gardener exit {result.returncode}: {result.stderr or result.stdout or 'no output'}"
-        )
-    response_text = (result.stdout or "").strip()
-    start = response_text.find("{")
-    end = response_text.rfind("}") + 1
-    if start < 0 or end <= start:
-        return []
     try:
-        parsed = json.loads(response_text[start:end])
-    except json.JSONDecodeError:
+        parsed = run_structured_prompt(
+            prompt,
+            schema=TOPIC_GARDENER_SCHEMA,
+            purpose="topic-gardener",
+            trust=True,
+        )
+    except ValueError:
         return []
     actions = parsed.get("topic_actions")
     if not isinstance(actions, list):

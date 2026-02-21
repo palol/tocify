@@ -24,6 +24,7 @@ def _load_weekly_module():
 
     vault_mod.get_topic_paths = get_topic_paths
     vault_mod.VAULT_ROOT = Path(".")
+    vault_mod.run_structured_prompt = lambda *_args, **_kwargs: {}
 
     tocify_mod.parse_interests_md = lambda _text: {"keywords": []}
     tocify_mod.load_feeds = lambda _path: []
@@ -88,17 +89,19 @@ def _write_runner_inputs(root: Path, topic: str = "bci") -> None:
 
 class TopicRedundantMentionsTests(unittest.TestCase):
     def test_call_topic_redundancy_parses_mentions_and_falls_back_to_item_link(self) -> None:
-        original_run = WEEKLY.subprocess.run
+        original_call = WEEKLY.run_structured_prompt
         try:
-            WEEKLY.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(
-                returncode=0,
-                stdout=(
-                    '{"redundant_ids":["item-1"],"redundant_mentions":['
-                    '{"id":"item-1","topic_slug":"bci","matched_fact_bullet":"- Existing fact.","source_url":""}'
-                    "]}"
-                ),
-                stderr="",
-            )
+            WEEKLY.run_structured_prompt = lambda *_args, **_kwargs: {
+                "redundant_ids": ["item-1"],
+                "redundant_mentions": [
+                    {
+                        "id": "item-1",
+                        "topic_slug": "bci",
+                        "matched_fact_bullet": "- Existing fact.",
+                        "source_url": "",
+                    }
+                ],
+            }
             redundant_ids, mentions = WEEKLY._call_cursor_topic_redundancy(
                 [Path("topics/bci.md")],
                 [
@@ -112,7 +115,7 @@ class TopicRedundantMentionsTests(unittest.TestCase):
                 ],
             )
         finally:
-            WEEKLY.subprocess.run = original_run
+            WEEKLY.run_structured_prompt = original_call
 
         self.assertEqual(redundant_ids, {"item-1"})
         self.assertEqual(len(mentions), 1)

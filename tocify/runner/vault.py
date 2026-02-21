@@ -1,12 +1,14 @@
 """Vault layout: per-topic feeds/interests, shared briefs/logs/csv. VAULT_ROOT from BCI_VAULT_ROOT."""
 
 import datetime as dt
+import json
 import os
 import re
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 VAULT_ROOT = Path(os.environ.get("BCI_VAULT_ROOT", ".")).resolve()
 CONFIG_DIR = VAULT_ROOT / "config"
@@ -14,6 +16,12 @@ AGENT_DIR = VAULT_ROOT / "agent"
 BRIEFS_DIR = AGENT_DIR / "briefs"
 LOGS_DIR = AGENT_DIR / "logs"
 TOPICS_DIR = VAULT_ROOT / "topics"
+
+_BACKEND_MODEL_DEFAULTS: dict[str, tuple[str, str]] = {
+    "openai": ("OPENAI_MODEL", "gpt-4o"),
+    "gemini": ("GEMINI_MODEL", "gemini-2.0-flash"),
+    "cursor": ("CURSOR_MODEL", "unknown"),
+}
 
 
 @dataclass(frozen=True)
@@ -26,6 +34,23 @@ class TopicPaths:
     logs_dir: Path
     briefs_articles_csv: Path
     prompt_path: Path
+
+
+@dataclass
+class PromptRunResult:
+    """Result metadata for one backend prompt run."""
+
+    backend: str
+    model: str
+    output_text: str = ""
+    attempts: int = 0
+    response_id: str = ""
+    refs: list[Path] = field(default_factory=list)
+    ref_chars: int = 0
+    terminal_error: str = ""
+    command: list[str] = field(default_factory=list)
+    returncode: int = 0
+    stderr: str = ""
 
 
 def get_topic_paths(topic: str, vault_root: Path | None = None) -> TopicPaths:
@@ -170,85 +195,355 @@ def _expand_prompt_references(prompt: str) -> tuple[str, list[Path], int]:
     return "\n".join(out_lines), resolved_paths, total_chars
 
 
-def _should_use_openai_backend() -> bool:
-    backend = os.environ.get("TOCIFY_BACKEND", "").strip().lower()
-    if backend == "openai":
-        return True
-    if backend:
-        return False
-    return bool(os.environ.get("OPENAI_API_KEY", "").strip())
+def _resolve_runner_backend_name() -> str:
+    backend = os.getenv("TOCIFY_BACKEND", "").strip().lower()
+    if not backend:
+        backend = "cursor" if os.getenv("CURSOR_API_KEY", "").strip() else "openai"
+    if backend not in _BACKEND_MODEL_DEFAULTS:
+        known = sorted(_BACKEND_MODEL_DEFAULTS)
+        raise RuntimeError(
+            f"Unknown TOCIFY_BACKEND={backend!r}. Known: {known}. "
+            "Set TOCIFY_BACKEND=openai|cursor|gemini or configure API keys."
+        )
+    return backend
 
 
-def _run_openai_and_save_output(
+def _resolve_runner_model(backend: str, model: str | None) -> str:
+    model_env, default_model = _BACKEND_MODEL_DEFAULTS[backend]
+    if model and model.strip():
+        return model.strip()
+    env_model = os.getenv(model_env, "").strip()
+    if env_model:
+        return env_model
+    return default_model
+
+
+def _maybe_expand_prompt(
     prompt: str,
-    output_path: Path,
-    log_path: Path,
-    fallback_content: str,
     *,
-    model: str | None = None,
-) -> None:
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    backend: str,
+    expand_refs: bool | None,
+) -> tuple[str, list[Path], int]:
+    should_expand = backend in ("openai", "gemini") if expand_refs is None else bool(expand_refs)
+    if not should_expand:
+        return prompt, [], 0
+    return _expand_prompt_references(prompt)
 
-    selected_model = model or os.environ.get("OPENAI_MODEL", "").strip() or "gpt-4o"
-    attempts = 0
-    response_id = ""
-    output_text = ""
-    refs: list[Path] = []
-    ref_chars = 0
-    terminal_error = ""
+
+def _extract_json_object_text(response_text: str) -> str:
+    start = response_text.find("{")
+    end = response_text.rfind("}") + 1
+    if start < 0 or end <= start:
+        raise ValueError("No JSON object found in model output")
+    return response_text[start:end]
+
+
+def _run_openai_prompt(
+    prompt: str,
+    *,
+    model: str,
+    purpose: str,
+    json_schema: dict | None,
+    expand_refs: bool | None,
+    raise_on_error: bool,
+) -> PromptRunResult:
+    result = PromptRunResult(backend="openai", model=model)
+    try:
+        expanded_prompt, refs, ref_chars = _maybe_expand_prompt(
+            prompt,
+            backend="openai",
+            expand_refs=expand_refs,
+        )
+        result.refs = refs
+        result.ref_chars = ref_chars
+    except Exception as e:
+        result.terminal_error = f"{e.__class__.__name__}: {e}"
+        if raise_on_error:
+            raise RuntimeError(f"openai {purpose} failed: {result.terminal_error}") from e
+        return result
 
     try:
-        expanded_prompt, refs, ref_chars = _expand_prompt_references(prompt)
+        import httpx
+        from openai import APITimeoutError, APIConnectionError, OpenAI, RateLimitError
     except Exception as e:
-        expanded_prompt = ""
-        terminal_error = f"{e.__class__.__name__}: {e}"
-    else:
+        result.terminal_error = f"{e.__class__.__name__}: {e}"
+        if raise_on_error:
+            raise RuntimeError(f"openai {purpose} failed: {result.terminal_error}") from e
+        return result
+
+    try:
+        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if not api_key.startswith("sk-"):
+            raise RuntimeError("OPENAI_API_KEY missing/invalid (expected to start with 'sk-').")
+        http_client = httpx.Client(
+            timeout=httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0),
+            http2=False,
+            trust_env=False,
+            headers={"Connection": "close", "Accept-Encoding": "gzip"},
+        )
+        client = OpenAI(api_key=api_key, http_client=http_client)
+    except Exception as e:
+        result.terminal_error = f"{e.__class__.__name__}: {e}"
+        if raise_on_error:
+            raise RuntimeError(f"openai {purpose} failed: {result.terminal_error}") from e
+        return result
+
+    for attempt in range(6):
+        result.attempts = attempt + 1
         try:
-            from openai import APITimeoutError, APIConnectionError, RateLimitError
-
-            from tocify.integrations.openai_triage import make_openai_client
-
-            client = make_openai_client()
-            for attempt in range(6):
-                attempts = attempt + 1
-                try:
-                    resp = client.responses.create(model=selected_model, input=expanded_prompt)
-                    response_id = getattr(resp, "id", "") or ""
-                    output_text = (getattr(resp, "output_text", "") or "").strip()
-                    if not output_text:
-                        terminal_error = "RuntimeError: Empty output from OpenAI response."
-                    break
-                except (APITimeoutError, APIConnectionError, RateLimitError) as e:
-                    terminal_error = f"{e.__class__.__name__}: {e}"
-                    if attempt < 5:
-                        time.sleep(min(60, 2**attempt))
-                except Exception as e:
-                    terminal_error = f"{e.__class__.__name__}: {e}"
-                    break
+            kwargs: dict[str, Any] = {"model": model, "input": expanded_prompt}
+            if json_schema is not None:
+                kwargs["text"] = {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "runner_structured_output",
+                        "schema": json_schema,
+                        "strict": True,
+                    }
+                }
+            response = client.responses.create(**kwargs)
+            result.response_id = getattr(response, "id", "") or ""
+            result.output_text = (getattr(response, "output_text", "") or "").strip()
+            if result.output_text:
+                return result
+            result.terminal_error = "RuntimeError: Empty output from OpenAI response."
+        except (APITimeoutError, APIConnectionError, RateLimitError) as e:
+            result.terminal_error = f"{e.__class__.__name__}: {e}"
+            if attempt < 5:
+                time.sleep(min(60, 2**attempt))
         except Exception as e:
-            terminal_error = f"{e.__class__.__name__}: {e}"
+            result.terminal_error = f"{e.__class__.__name__}: {e}"
+            break
 
-    used_fallback = not bool(output_text)
-    final_output = output_text or fallback_content
-    output_path.write_text(final_output, encoding="utf-8")
+    if raise_on_error:
+        raise RuntimeError(f"openai {purpose} failed: {result.terminal_error or 'unknown error'}")
+    return result
 
-    log_lines = [
-        "backend=openai",
-        f"model={selected_model}",
-        f"response_id={response_id or '(none)'}",
-        f"attempts={attempts}",
-        f"expanded_refs={len(refs)}",
-        f"expanded_ref_chars={ref_chars}",
+
+def _run_gemini_prompt(
+    prompt: str,
+    *,
+    model: str,
+    purpose: str,
+    json_schema: dict | None,
+    expand_refs: bool | None,
+    raise_on_error: bool,
+) -> PromptRunResult:
+    result = PromptRunResult(backend="gemini", model=model)
+    try:
+        expanded_prompt, refs, ref_chars = _maybe_expand_prompt(
+            prompt,
+            backend="gemini",
+            expand_refs=expand_refs,
+        )
+        result.refs = refs
+        result.ref_chars = ref_chars
+    except Exception as e:
+        result.terminal_error = f"{e.__class__.__name__}: {e}"
+        if raise_on_error:
+            raise RuntimeError(f"gemini {purpose} failed: {result.terminal_error}") from e
+        return result
+
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        result.terminal_error = "RuntimeError: GEMINI_API_KEY missing/invalid."
+        if raise_on_error:
+            raise RuntimeError(f"gemini {purpose} failed: {result.terminal_error}")
+        return result
+
+    try:
+        from google import genai
+    except Exception as e:
+        result.terminal_error = f"{e.__class__.__name__}: {e}"
+        if raise_on_error:
+            raise RuntimeError(f"gemini {purpose} failed: {result.terminal_error}") from e
+        return result
+
+    try:
+        client = genai.Client(api_key=api_key)
+    except Exception as e:
+        result.terminal_error = f"{e.__class__.__name__}: {e}"
+        if raise_on_error:
+            raise RuntimeError(f"gemini {purpose} failed: {result.terminal_error}") from e
+        return result
+
+    for attempt in range(6):
+        result.attempts = attempt + 1
+        try:
+            config_candidates: list[dict[str, Any] | None]
+            if json_schema is None:
+                config_candidates = [None]
+            else:
+                config_candidates = [
+                    {"response_mime_type": "application/json", "response_schema": json_schema},
+                    {"response_mime_type": "application/json", "response_json_schema": json_schema},
+                ]
+
+            response_text = ""
+            last_type_error: Exception | None = None
+            for config in config_candidates:
+                try:
+                    if config is None:
+                        response = client.models.generate_content(model=model, contents=expanded_prompt)
+                    else:
+                        response = client.models.generate_content(
+                            model=model,
+                            contents=expanded_prompt,
+                            config=config,
+                        )
+                    response_text = (getattr(response, "text", "") or "").strip()
+                    if response_text:
+                        break
+                except TypeError as e:
+                    last_type_error = e
+
+            if not response_text and last_type_error is not None:
+                raise RuntimeError("Gemini client rejected schema config; check google-genai version.") from last_type_error
+            if not response_text:
+                raise RuntimeError("Empty response text from Gemini")
+            result.output_text = response_text
+            return result
+        except Exception as e:
+            result.terminal_error = f"{e.__class__.__name__}: {e}"
+            if attempt < 5:
+                time.sleep(min(60, 2**attempt))
+
+    if raise_on_error:
+        raise RuntimeError(f"gemini {purpose} failed: {result.terminal_error or 'unknown error'}")
+    return result
+
+
+def _run_cursor_prompt(
+    prompt: str,
+    *,
+    model: str,
+    purpose: str,
+    trust: bool,
+    raise_on_error: bool,
+) -> PromptRunResult:
+    result = PromptRunResult(backend="cursor", model=model)
+    cmd = ["agent", "-p", "--output-format", "text"]
+    if trust:
+        cmd.append("--trust")
+    if model and model != "unknown":
+        cmd.extend(["--model", model])
+    cmd.append(prompt)
+
+    try:
+        completed = subprocess.run(cmd, capture_output=True, text=True, env=os.environ)
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            "Cursor backend selected but `agent` command was not found on PATH. "
+            "Install Cursor CLI agent support or set TOCIFY_BACKEND=openai|gemini."
+        ) from e
+
+    result.command = cmd
+    result.returncode = int(getattr(completed, "returncode", 0) or 0)
+    result.output_text = (completed.stdout or "").strip()
+    result.stderr = (completed.stderr or "").strip()
+    if result.returncode != 0:
+        result.terminal_error = (
+            f"cursor {purpose} exit {result.returncode}: "
+            f"{result.stderr or result.output_text or 'no output'}"
+        )
+        if raise_on_error:
+            raise RuntimeError(result.terminal_error)
+    return result
+
+
+def run_backend_prompt(
+    prompt: str,
+    *,
+    model: str | None = None,
+    purpose: str = "runner",
+    json_schema: dict | None = None,
+    expand_refs: bool | None = None,
+    trust: bool = False,
+    raise_on_error: bool = True,
+) -> PromptRunResult:
+    """Run a prompt through the active backend and return result metadata."""
+    backend = _resolve_runner_backend_name()
+    selected_model = _resolve_runner_model(backend, model)
+
+    if backend == "openai":
+        return _run_openai_prompt(
+            prompt,
+            model=selected_model,
+            purpose=purpose,
+            json_schema=json_schema,
+            expand_refs=expand_refs,
+            raise_on_error=raise_on_error,
+        )
+    if backend == "gemini":
+        return _run_gemini_prompt(
+            prompt,
+            model=selected_model,
+            purpose=purpose,
+            json_schema=json_schema,
+            expand_refs=expand_refs,
+            raise_on_error=raise_on_error,
+        )
+    return _run_cursor_prompt(
+        prompt,
+        model=selected_model,
+        purpose=purpose,
+        trust=trust,
+        raise_on_error=raise_on_error,
+    )
+
+
+def run_structured_prompt(
+    prompt: str,
+    *,
+    schema: dict,
+    model: str | None = None,
+    purpose: str = "runner-structured",
+    expand_refs: bool | None = None,
+    trust: bool = False,
+) -> dict:
+    """Run a prompt and parse the first JSON object from model output."""
+    result = run_backend_prompt(
+        prompt,
+        model=model,
+        purpose=purpose,
+        json_schema=schema,
+        expand_refs=expand_refs,
+        trust=trust,
+        raise_on_error=True,
+    )
+    response_text = (result.output_text or "").strip()
+    if not response_text:
+        raise ValueError("No JSON object found in model output")
+    try:
+        return json.loads(_extract_json_object_text(response_text))
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in model output: {e}") from e
+
+
+def _build_prompt_log(result: PromptRunResult, final_output: str, used_fallback: bool) -> str:
+    lines = [
+        f"backend={result.backend}",
+        f"model={result.model}",
+        f"response_id={result.response_id or '(none)'}",
+        f"attempts={result.attempts}",
+        f"expanded_refs={len(result.refs)}",
+        f"expanded_ref_chars={result.ref_chars}",
         f"used_fallback={used_fallback}",
         f"output_chars={len(final_output)}",
     ]
-    if terminal_error:
-        log_lines.append(f"terminal_error={terminal_error}")
-    if refs:
-        log_lines.append("ref_paths=")
-        log_lines.extend(str(p) for p in refs)
-    log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+    if result.command:
+        lines.append("command=" + " ".join(result.command))
+    if result.returncode:
+        lines.append(f"returncode={result.returncode}")
+    if result.terminal_error:
+        lines.append(f"terminal_error={result.terminal_error}")
+    if result.refs:
+        lines.append("ref_paths=")
+        lines.extend(str(p) for p in result.refs)
+    if result.stderr:
+        lines.append("stderr=")
+        lines.append(result.stderr)
+    return "\n".join(lines) + "\n"
 
 
 def run_agent_and_save_output(
@@ -260,50 +555,19 @@ def run_agent_and_save_output(
     model: str | None = None,
 ) -> None:
     """Run content generation and save output/log."""
-    if _should_use_openai_backend():
-        _run_openai_and_save_output(
-            prompt,
-            output_path,
-            log_path,
-            fallback_content,
-            model=model,
-        )
-        return
-
     output_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    mtime_before = output_path.stat().st_mtime if output_path.exists() else 0
 
-    cmd = ["agent", "-p", "--output-format", "text"]
-    if model:
-        cmd.extend(["--model", model])
-    cmd.append(prompt)
+    result = run_backend_prompt(
+        prompt,
+        model=model,
+        purpose="runner-generation",
+        expand_refs=None,
+        trust=False,
+        raise_on_error=False,
+    )
 
-    result = subprocess.run(cmd, capture_output=True, text=True, env=os.environ)
-
-    log_parts = []
-    if result.stdout:
-        log_parts.append(result.stdout)
-    if result.stderr:
-        log_parts.append(f"\n--- stderr ---\n{result.stderr}")
-    if result.returncode != 0:
-        log_parts.append(f"\n--- exit code: {result.returncode} ---")
-    log_message = "\n".join(log_parts) if log_parts else "No output from agent command"
-
-    stdout_content = (result.stdout or "").strip()
-    agent_wrote = False
-    if output_path.exists() and output_path.stat().st_mtime > mtime_before:
-        agent_wrote = True
-
-    if agent_wrote:
-        try:
-            content = output_path.read_text(encoding="utf-8")
-        except Exception:
-            agent_wrote = False
-            content = stdout_content or fallback_content
-    else:
-        content = stdout_content or fallback_content
-
-    log_path.write_text(log_message, encoding="utf-8")
-    if not agent_wrote and content:
-        output_path.write_text(content, encoding="utf-8")
+    final_output = result.output_text or fallback_content
+    used_fallback = not bool(result.output_text)
+    output_path.write_text(final_output, encoding="utf-8")
+    log_path.write_text(_build_prompt_log(result, final_output, used_fallback), encoding="utf-8")

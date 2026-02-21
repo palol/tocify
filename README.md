@@ -60,6 +60,7 @@ Alternatively use pip and a venv as usual; the GitHub workflow uses uv and reads
 4. Locally: copy `.env.example` to `.env`, add your key, run `python digest.py`.
 
 Backend is auto-chosen from which key is set, or set **`TOCIFY_BACKEND=openai`**, **`cursor`**, or **`gemini`** to force.
+For Cursor backend, the terminal command must be available as **`agent`** on `PATH`.
 
 ---
 
@@ -102,10 +103,12 @@ This applies to newly generated outputs (`digest.md`, weekly briefs, monthly rou
 ## Vault / multi-topic runner (`tocify-runner`)
 
 For multiple topics and a shared vault layout, use the **`tocify-runner`** CLI (same package). It uses tocify for RSS fetch, prefilter, triage, and render; adds per-topic feeds/interests, topic redundancy vs a digital garden, topic gardener, and `briefs_articles.csv`.
+Runner AI steps (weekly triage, topic redundancy, topic gardener, monthly, annual) follow the selected backend.
 
 Set **`BCI_VAULT_ROOT`** to the vault root (directory containing `config/`, `agent/`). Default is current directory.
 Topic gardener is **enabled by default** for runner weekly jobs; set **`TOPIC_GARDENER=0`** to opt out.
 Gardener writes topic updates as **fact bullet lists** (for both create and update text), with source footnotes.
+If backend is `cursor` and `agent` is not found, runner exits with an actionable error; set `TOCIFY_BACKEND=openai` or `gemini` to use API backends instead.
 
 **Commands**
 

@@ -25,6 +25,7 @@ def _load_weekly_module():
 
     vault_mod.get_topic_paths = get_topic_paths
     vault_mod.VAULT_ROOT = Path(".")
+    vault_mod.run_structured_prompt = lambda *_args, **_kwargs: {}
 
     tocify_mod.parse_interests_md = lambda _text: {"keywords": []}
     tocify_mod.load_feeds = lambda _path: []
