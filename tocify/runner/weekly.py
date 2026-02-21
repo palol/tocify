@@ -339,29 +339,6 @@ def filter_topic_redundant_items(
     kept = [it for it in items if it["id"] not in all_redundant]
     return kept, len(items) - len(kept), _dedupe_redundant_mentions(all_mentions)
 
-def filter_topic_redundant_items(
-    topic_paths: list[Path],
-    items: list[dict],
-    batch_size: int,
-    redundancy_log_path: Path | None = None,
-) -> tuple[list[dict], int]:
-    if not topic_paths or not items:
-        return items, 0
-    all_redundant: set[str] = set()
-    batch_starts = list(range(0, len(items), batch_size))
-    disable = not sys.stderr.isatty()
-    for i in tqdm(batch_starts, desc="Topic redundancy", unit="batch", disable=disable):
-        batch = items[i : i + batch_size]
-        redundant = _call_cursor_topic_redundancy(topic_paths, batch)
-        all_redundant |= redundant
-    if redundancy_log_path is not None:
-        redundancy_log_path.parent.mkdir(parents=True, exist_ok=True)
-        redundancy_log_path.write_text(
-            json.dumps({"redundant_ids": sorted(all_redundant)}, indent=2),
-            encoding="utf-8",
-        )
-    kept = [it for it in items if it["id"] not in all_redundant]
-    return kept, len(items) - len(kept)
 
 # ---- topic gardener ----
 TOPIC_GARDENER_PROMPT = """You are curating a **global digital garden** of evergreen topic pages.
