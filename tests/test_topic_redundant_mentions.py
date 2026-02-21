@@ -121,6 +121,69 @@ class TopicRedundantMentionsTests(unittest.TestCase):
         self.assertEqual(len(mentions), 1)
         self.assertEqual(mentions[0]["source_url"], "https://example.com/a")
 
+    def test_call_topic_redundancy_ignores_non_metadata_source_url(self) -> None:
+        original_call = WEEKLY.run_structured_prompt
+        try:
+            WEEKLY.run_structured_prompt = lambda *_args, **_kwargs: {
+                "redundant_ids": ["item-1"],
+                "redundant_mentions": [
+                    {
+                        "id": "item-1",
+                        "topic_slug": "bci",
+                        "matched_fact_bullet": "- Existing fact.",
+                        "source_url": "https://fake.example.com/not-in-metadata",
+                    }
+                ],
+            }
+            _redundant_ids, mentions = WEEKLY._call_cursor_topic_redundancy(
+                [Path("topics/bci.md")],
+                [
+                    {
+                        "id": "item-1",
+                        "title": "Paper A",
+                        "link": "https://example.com/a",
+                        "source": "Journal A",
+                        "summary": "Summary A",
+                    }
+                ],
+            )
+        finally:
+            WEEKLY.run_structured_prompt = original_call
+
+        self.assertEqual(len(mentions), 1)
+        self.assertEqual(mentions[0]["source_url"], "https://example.com/a")
+
+    def test_call_topic_redundancy_drops_mention_without_metadata_url(self) -> None:
+        original_call = WEEKLY.run_structured_prompt
+        try:
+            WEEKLY.run_structured_prompt = lambda *_args, **_kwargs: {
+                "redundant_ids": ["item-1"],
+                "redundant_mentions": [
+                    {
+                        "id": "item-1",
+                        "topic_slug": "bci",
+                        "matched_fact_bullet": "- Existing fact.",
+                        "source_url": "https://fake.example.com/not-in-metadata",
+                    }
+                ],
+            }
+            _redundant_ids, mentions = WEEKLY._call_cursor_topic_redundancy(
+                [Path("topics/bci.md")],
+                [
+                    {
+                        "id": "item-1",
+                        "title": "Paper A",
+                        "link": "",
+                        "source": "Journal A",
+                        "summary": "Summary A",
+                    }
+                ],
+            )
+        finally:
+            WEEKLY.run_structured_prompt = original_call
+
+        self.assertEqual(mentions, [])
+
     def test_apply_redundant_mention_to_body_adds_footnote_without_updating_existing_count_suffix(self) -> None:
         body = (
             "- Existing fact. [^1] _(mentions: 1 sources)_\n\n"

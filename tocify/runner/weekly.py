@@ -228,9 +228,13 @@ def _render_topic_refs_for_redundancy(topic_paths: list[Path]) -> str:
     return "\n\n".join(refs)
 
 
-def _call_cursor_topic_redundancy(topic_paths: list[Path], items: list[dict]) -> tuple[set[str], list[dict]]:
+def _call_cursor_topic_redundancy(
+    topic_paths: list[Path], items: list[dict], allowed_source_url_index: dict[str, str] | None = None
+) -> tuple[set[str], list[dict]]:
     if not topic_paths or not items:
         return set(), []
+    if allowed_source_url_index is None:
+        allowed_source_url_index = _build_allowed_source_url_index(items)
     topic_refs = _render_topic_refs_for_redundancy(topic_paths) or "(no readable topic content)"
     lean_items = [
         {
@@ -273,9 +277,11 @@ def _call_cursor_topic_redundancy(topic_paths: list[Path], items: list[dict]) ->
                 continue
             topic_slug = str(raw.get("topic_slug") or "").strip()
             matched_fact_bullet = str(raw.get("matched_fact_bullet") or "").strip()
-            source_url = str(raw.get("source_url") or "").strip()
-            if not source_url:
-                source_url = str(item_by_id[item_id].get("link") or "").strip()
+            source_url = _resolve_allowed_source_url(
+                str(raw.get("source_url") or "").strip(),
+                str(item_by_id[item_id].get("link") or "").strip(),
+                allowed_source_url_index,
+            )
             if not topic_slug or not matched_fact_bullet or not source_url:
                 continue
             mentions.append(
@@ -316,15 +322,22 @@ def _dedupe_redundant_mentions(mentions: list[dict]) -> list[dict]:
 
 
 def filter_topic_redundant_items(
-    topic_paths: list[Path], items: list[dict], batch_size: int
+    topic_paths: list[Path],
+    items: list[dict],
+    batch_size: int,
+    allowed_source_url_index: dict[str, str] | None = None,
 ) -> tuple[list[dict], int, list[dict]]:
     if not topic_paths or not items:
         return items, 0, []
+    if allowed_source_url_index is None:
+        allowed_source_url_index = _build_allowed_source_url_index(items)
     all_redundant: set[str] = set()
     all_mentions: list[dict] = []
     for i in range(0, len(items), batch_size):
         batch = items[i : i + batch_size]
-        redundant, mentions = _call_cursor_topic_redundancy(topic_paths, batch)
+        redundant, mentions = _call_cursor_topic_redundancy(
+            topic_paths, batch, allowed_source_url_index=allowed_source_url_index
+        )
         all_redundant |= redundant
         all_mentions.extend([m for m in mentions if str(m.get("id") or "").strip() in redundant])
     kept = [it for it in items if it["id"] not in all_redundant]
@@ -406,6 +419,54 @@ def _dedupe_urls(urls: list[str]) -> list[str]:
         seen.add(u)
         out.append(u)
     return out
+
+
+def _build_allowed_source_url_index(items: list[dict]) -> dict[str, str]:
+    """Map normalized URL -> canonical metadata URL from item links."""
+    index: dict[str, str] = {}
+    for item in items:
+        link = str(item.get("link") or "").strip()
+        norm = normalize_url_for_dedup(link)
+        if not norm or norm in index:
+            continue
+        index[norm] = link
+    return index
+
+
+def _filter_urls_to_allowed(urls: list[str], allowed_source_url_index: dict[str, str] | None) -> list[str]:
+    deduped = _dedupe_urls(urls)
+    if allowed_source_url_index is None:
+        return deduped
+    out: list[str] = []
+    seen_norm: set[str] = set()
+    for raw in deduped:
+        norm = normalize_url_for_dedup(raw)
+        if not norm:
+            continue
+        canonical = allowed_source_url_index.get(norm)
+        if not canonical or norm in seen_norm:
+            continue
+        seen_norm.add(norm)
+        out.append(canonical)
+    return out
+
+
+def _resolve_allowed_source_url(
+    source_url: str, item_link: str, allowed_source_url_index: dict[str, str] | None
+) -> str:
+    if allowed_source_url_index is None:
+        return (source_url or "").strip() or (item_link or "").strip()
+    for raw in (source_url, item_link):
+        candidate = str(raw or "").strip()
+        if not candidate:
+            continue
+        norm = normalize_url_for_dedup(candidate)
+        if not norm:
+            continue
+        canonical = allowed_source_url_index.get(norm)
+        if canonical:
+            return canonical
+    return ""
 
 
 def _extract_urls_from_markdown(text: str) -> list[str]:
@@ -715,6 +776,7 @@ def _apply_topic_action(
     topic: str | None = None,
     triage_backend: str = "unknown",
     triage_model: str = "unknown",
+    allowed_source_url_index: dict[str, str] | None = None,
 ) -> None:
     act = (action.get("action") or "").strip().lower()
     slug = (action.get("slug") or "").strip()
@@ -729,7 +791,10 @@ def _apply_topic_action(
         body_markdown = _normalize_to_fact_bullets((action.get("body_markdown") or "").strip())
         sources = action.get("sources") if isinstance(action.get("sources"), list) else []
         sources = [str(s).strip() for s in sources if str(s).strip()]
-        sources = _dedupe_urls(sources + _extract_urls_from_markdown(body_markdown))
+        sources = _filter_urls_to_allowed(
+            sources + _extract_urls_from_markdown(body_markdown),
+            allowed_source_url_index,
+        )
         links_to = action.get("links_to") if isinstance(action.get("links_to"), list) else []
         links_to = [str(s).strip() for s in links_to if str(s).strip()]
         action_tags = normalize_ai_tags(_string_list(action.get("tags")))
@@ -761,13 +826,16 @@ def _apply_topic_action(
             append_sources = [str(s).strip() for s in append_sources if str(s).strip()]
         else:
             append_sources = []
-        append_sources = _dedupe_urls(append_sources)
+        append_sources = _filter_urls_to_allowed(append_sources, allowed_source_url_index)
         summary_addendum = _normalize_to_fact_bullets((action.get("summary_addendum") or "").strip())
         action_tags = normalize_ai_tags(_string_list(action.get("tags")))
         existing_tags = normalize_ai_tags(_string_list(existing_frontmatter.get("tags")))
         merged_tags = normalize_ai_tags(_merge_unique(existing_tags + action_tags + default_tags))
         to_append = []
-        sources_for_summary = _dedupe_urls(append_sources + _extract_urls_from_markdown(summary_addendum))
+        sources_for_summary = _filter_urls_to_allowed(
+            append_sources + _extract_urls_from_markdown(summary_addendum),
+            allowed_source_url_index,
+        )
         if summary_addendum:
             if not sources_for_summary:
                 raise ValueError("update action has summary_addendum but no source URLs")
@@ -780,7 +848,7 @@ def _apply_topic_action(
             to_append.append("\n\n### New sources\n\n" + "\n".join(f"- {u}" for u in append_sources))
         updated_body = existing_body + "".join(to_append)
         existing_sources = _string_list(existing_frontmatter.get("sources"))
-        merged_sources = _dedupe_urls(existing_sources + append_sources + _extract_urls_from_markdown(summary_addendum))
+        merged_sources = _dedupe_urls(existing_sources + sources_for_summary)
         frontmatter = dict(existing_frontmatter)
         frontmatter["title"] = str(frontmatter.get("title") or slug).strip() or slug
         frontmatter["date"] = str(frontmatter.get("date") or today)
@@ -798,7 +866,12 @@ def _apply_topic_action(
         path.write_text(with_frontmatter(updated_body, frontmatter), encoding="utf-8")
 
 
-def run_topic_gardener(topics_dir: Path, brief_path: Path, topic: str) -> None:
+def run_topic_gardener(
+    topics_dir: Path,
+    brief_path: Path,
+    topic: str,
+    allowed_source_url_index: dict[str, str] | None = None,
+) -> None:
     topics_dir.mkdir(parents=True, exist_ok=True)
     if not brief_path.exists():
         return
@@ -820,6 +893,7 @@ def run_topic_gardener(topics_dir: Path, brief_path: Path, topic: str) -> None:
                 topic=topic,
                 triage_backend=brief_meta["triage_backend"],
                 triage_model=brief_meta["triage_model"],
+                allowed_source_url_index=allowed_source_url_index,
             )
             applied += 1
         except Exception as e:
@@ -1000,6 +1074,7 @@ def run_weekly(
         print(f"Cross-week filter: dropped {before_cross - len(items)} items, {len(items)} remaining")
 
     topics_dir = root / "topics"
+    allowed_source_url_index = _build_allowed_source_url_index(items)
     redundant_mentions: list[dict] = []
     if TOPIC_REDUNDANCY_ENABLED and items:
         topics_dir.mkdir(parents=True, exist_ok=True)
@@ -1008,7 +1083,7 @@ def run_weekly(
         if topic_paths:
             print(f"Topic redundancy: checking {len(items)} items against {len(topic_paths)} topic file(s)")
             items, dropped, redundant_mentions = filter_topic_redundant_items(
-                topic_paths, items, TOPIC_REDUNDANCY_BATCH_SIZE
+                topic_paths, items, TOPIC_REDUNDANCY_BATCH_SIZE, allowed_source_url_index=allowed_source_url_index
             )
             if dropped > 0:
                 print(f"Topic redundancy: dropped {dropped} items, {len(items)} remaining")
@@ -1075,4 +1150,13 @@ def run_weekly(
 
     if TOPIC_GARDENER_ENABLED and not dry_run and kept:
         topics_dir.mkdir(parents=True, exist_ok=True)
-        run_topic_gardener(topics_dir, brief_path, topic)
+        kept_items_for_sources = [
+            {"link": (r.get("link") or items_by_id.get(r.get("id"), {}).get("link") or "").strip()}
+            for r in kept
+        ]
+        run_topic_gardener(
+            topics_dir,
+            brief_path,
+            topic,
+            allowed_source_url_index=_build_allowed_source_url_index(kept_items_for_sources),
+        )

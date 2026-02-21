@@ -188,6 +188,46 @@ class TopicGardenerFootnoteTests(unittest.TestCase):
             self.assertEqual(content.count("[^1]: https://example.com/a"), 1)
             self.assertNotIn("[^2]:", content)
 
+    def test_create_filters_sources_to_allowed_metadata_urls(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            allowed = WEEKLY._build_allowed_source_url_index([{"link": "https://example.com/a"}])
+            _apply_topic_action(
+                tmp_path,
+                {
+                    "action": "create",
+                    "slug": "bci",
+                    "title": "BCI",
+                    "body_markdown": "Update text.",
+                    "sources": ["https://example.com/a", "https://fake.example.com/bad"],
+                    "links_to": [],
+                },
+                "2026-02-20",
+                allowed_source_url_index=allowed,
+            )
+            content = _read(tmp_path / "bci.md")
+            self.assertIn("[^1]: https://example.com/a", content)
+            self.assertNotIn("fake.example.com/bad", content)
+
+    def test_update_with_non_allowed_summary_url_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            topic_file = tmp_path / "bci.md"
+            topic_file.write_text("---\ntitle: \"BCI\"\n---\n\nBase content.", encoding="utf-8")
+            allowed = WEEKLY._build_allowed_source_url_index([{"link": "https://example.com/a"}])
+            with self.assertRaisesRegex(ValueError, "no source URLs"):
+                _apply_topic_action(
+                    tmp_path,
+                    {
+                        "action": "update",
+                        "slug": "bci",
+                        "summary_addendum": "Details are in https://fake.example.com/report.",
+                        "append_sources": [],
+                    },
+                    "2026-02-20",
+                    allowed_source_url_index=allowed,
+                )
+
     def test_update_addendum_with_append_sources_gets_footnotes(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             tmp_path = Path(td)
