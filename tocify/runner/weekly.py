@@ -6,6 +6,7 @@ import math
 import os
 import re
 import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import date, datetime, time as dt_time, timezone, timedelta
@@ -14,6 +15,7 @@ from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from dotenv import load_dotenv
 from newspaper import Article
+from tqdm import tqdm
 
 import tocify
 from tocify.runner.vault import get_topic_paths, VAULT_ROOT
@@ -35,7 +37,7 @@ NEWSPAPER_TIMEOUT = int(os.getenv("NEWSPAPER_TIMEOUT", "10"))
 TOPIC_REDUNDANCY_ENABLED = os.getenv("TOPIC_REDUNDANCY", "1").strip().lower() in ("1", "true", "yes")
 TOPIC_REDUNDANCY_LOOKBACK_DAYS = int(os.getenv("TOPIC_REDUNDANCY_LOOKBACK_DAYS", "56"))
 TOPIC_REDUNDANCY_BATCH_SIZE = int(os.getenv("TOPIC_REDUNDANCY_BATCH_SIZE", "25"))
-TOPIC_GARDENER_ENABLED = os.getenv("TOPIC_GARDENER", "0").strip().lower() in ("1", "true", "yes")
+TOPIC_GARDENER_ENABLED = os.getenv("TOPIC_GARDENER", "1").strip().lower() in ("1", "true", "yes")
 
 BRIEFS_ARTICLES_COLUMNS = [
     "topic", "week_of", "url", "title", "source", "published_utc", "score", "brief_filename",
@@ -197,15 +199,26 @@ def _call_cursor_topic_redundancy(topic_paths: list[Path], items: list[dict]) ->
 
 
 def filter_topic_redundant_items(
-    topic_paths: list[Path], items: list[dict], batch_size: int
+    topic_paths: list[Path],
+    items: list[dict],
+    batch_size: int,
+    redundancy_log_path: Path | None = None,
 ) -> tuple[list[dict], int]:
     if not topic_paths or not items:
         return items, 0
     all_redundant: set[str] = set()
-    for i in range(0, len(items), batch_size):
+    batch_starts = list(range(0, len(items), batch_size))
+    disable = not sys.stderr.isatty()
+    for i in tqdm(batch_starts, desc="Topic redundancy", unit="batch", disable=disable):
         batch = items[i : i + batch_size]
         redundant = _call_cursor_topic_redundancy(topic_paths, batch)
         all_redundant |= redundant
+    if redundancy_log_path is not None:
+        redundancy_log_path.parent.mkdir(parents=True, exist_ok=True)
+        redundancy_log_path.write_text(
+            json.dumps({"redundant_ids": sorted(all_redundant)}, indent=2),
+            encoding="utf-8",
+        )
     kept = [it for it in items if it["id"] not in all_redundant]
     return kept, len(items) - len(kept)
 
@@ -324,25 +337,39 @@ def _apply_topic_action(topics_dir: Path, action: dict, today: str) -> None:
             path.write_text(existing + "".join(to_append), encoding="utf-8")
 
 
-def run_topic_gardener(topics_dir: Path, brief_path: Path, topic: str) -> None:
+def run_topic_gardener(
+    topics_dir: Path,
+    brief_path: Path,
+    topic: str,
+    logs_dir: Path | None = None,
+    week_of: str | None = None,
+) -> None:
     topics_dir.mkdir(parents=True, exist_ok=True)
     if not brief_path.exists():
         return
     brief_content = brief_path.read_text(encoding="utf-8")
     existing_topics = _list_existing_topic_previews(topics_dir)
-    actions = _call_cursor_topic_gardener(brief_content, existing_topics, topic)
+    disable = not sys.stderr.isatty()
+    with tqdm(desc="Topic gardener (agent)", total=None, unit="", disable=disable):
+        actions = _call_cursor_topic_gardener(brief_content, existing_topics, topic)
+    if logs_dir is not None and week_of is not None:
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        out_path = logs_dir / f"topic_actions_{week_of}_{topic}.json"
+        out_path.write_text(
+            json.dumps({"topic_actions": actions}, indent=2),
+            encoding="utf-8",
+        )
     today = datetime.now(timezone.utc).date().isoformat()
+    valid_actions = [a for a in actions if isinstance(a, dict)]
     applied = 0
-    for a in actions:
-        if not isinstance(a, dict):
-            continue
+    for a in tqdm(valid_actions, desc="Topic gardener (apply)", unit="action", disable=disable):
         try:
             _apply_topic_action(topics_dir, a, today)
             applied += 1
         except Exception as e:
-            print(f"[WARN] Topic gardener: failed to apply action {a.get('slug', '?')}: {e}")
+            tqdm.write(f"[WARN] Topic gardener: failed to apply action {a.get('slug', '?')}: {e}")
     if applied > 0:
-        print(f"Topic gardener: applied {applied} topic action(s) under {topics_dir}")
+        tqdm.write(f"Topic gardener: applied {applied} topic action(s) under {topics_dir}")
 
 
 def render_brief_md(
@@ -446,7 +473,7 @@ def run_weekly(
         end_date = None
 
     items = tocify.fetch_rss_items(feeds, end_date=end_date)
-    print(f"Fetched {len(items)} RSS items (pre-filter) [topic={topic}]")
+    tqdm.write(f"Fetched {len(items)} RSS items (pre-filter) [topic={topic}]")
 
     paths.briefs_dir.mkdir(parents=True, exist_ok=True)
     brief_filename = f"{week_of}_{topic}_weekly-brief.md"
@@ -457,7 +484,7 @@ def run_weekly(
             f"# {topic.upper()} Weekly Brief (week of {week_of})\n\n_No RSS items found in the last {LOOKBACK_DAYS} days._\n",
             encoding="utf-8",
         )
-        print(f"No items; wrote {brief_path}")
+        tqdm.write(f"No items; wrote {brief_path}")
         return
 
     items = tocify.keyword_prefilter(
@@ -472,14 +499,14 @@ def run_weekly(
             seen_norm[norm] = True
             deduped.append(it)
     if len(deduped) < len(items):
-        print(f"Deduped by normalized URL: {len(items)} -> {len(deduped)}")
+        tqdm.write(f"Deduped by normalized URL: {len(items)} -> {len(deduped)}")
     items = deduped
 
     briefs_urls = load_briefs_articles_urls(paths.briefs_articles_csv, topic=topic)
     before_cross = len(items)
     items = [it for it in items if normalize_url_for_dedup((it.get("link") or "").strip()) not in briefs_urls]
     if before_cross > len(items):
-        print(f"Cross-week filter: dropped {before_cross - len(items)} items, {len(items)} remaining")
+        tqdm.write(f"Cross-week filter: dropped {before_cross - len(items)} items, {len(items)} remaining")
 
     topics_dir = root / "topics"
     if TOPIC_REDUNDANCY_ENABLED and items:
@@ -487,29 +514,29 @@ def run_weekly(
     if TOPIC_REDUNDANCY_ENABLED and topics_dir.exists() and items:
         topic_paths = load_recent_topic_files(topics_dir, TOPIC_REDUNDANCY_LOOKBACK_DAYS)
         if topic_paths:
-            print(f"Topic redundancy: checking {len(items)} items against {len(topic_paths)} topic file(s)")
+            tqdm.write(f"Topic redundancy: checking {len(items)} items against {len(topic_paths)} topic file(s)")
             items, dropped = filter_topic_redundant_items(
-                topic_paths, items, TOPIC_REDUNDANCY_BATCH_SIZE
+                topic_paths,
+                items,
+                TOPIC_REDUNDANCY_BATCH_SIZE,
+                redundancy_log_path=paths.logs_dir / "rss_redundancy_result.json",
             )
             if dropped > 0:
-                print(f"Topic redundancy: dropped {dropped} items, {len(items)} remaining")
+                tqdm.write(f"Topic redundancy: dropped {dropped} items, {len(items)} remaining")
 
     if dry_run:
         items = items[:dry_run]
-        print(f"Dry run: capped to {len(items)} items (no CSV append)")
+        tqdm.write(f"Dry run: capped to {len(items)} items (no CSV append)")
 
-    print(f"Sending {len(items)} RSS items to model (post-filter)")
+    tqdm.write(f"Sending {len(items)} RSS items to model (post-filter)")
 
     if USE_NEWSPAPER:
         to_enrich = items[:NEWSPAPER_MAX_ITEMS]
-        print(f"Enriching up to {len(to_enrich)} items with newspaper (timeout={NEWSPAPER_TIMEOUT}s each)")
-        for i, it in enumerate(to_enrich):
+        disable_newspaper = not sys.stderr.isatty()
+        for i, it in enumerate(tqdm(to_enrich, desc="Newspaper", disable=disable_newspaper)):
             enrich_item_with_newspaper(it, NEWSPAPER_TIMEOUT)
             if i < len(to_enrich) - 1:
                 time.sleep(0.2)
-            if (i + 1) % 10 == 0:
-                print(f"  Enriched {i + 1}/{len(to_enrich)}")
-        print("Newspaper enrichment done")
 
     items_by_id = {it["id"]: it for it in items}
 
@@ -525,7 +552,7 @@ def run_weekly(
     kept = [r for r in ranked if r["score"] >= MIN_SCORE_READ][:MAX_RETURNED]
     md = render_brief_md(result, items_by_id, kept, topic)
     brief_path.write_text(md, encoding="utf-8")
-    print(f"Wrote {brief_path}")
+    tqdm.write(f"Wrote {brief_path}")
 
     if not dry_run and kept:
         append_briefs_articles(
@@ -536,8 +563,11 @@ def run_weekly(
             items_by_id,
             brief_filename,
         )
-        print(f"Appended {len(kept)} rows to {paths.briefs_articles_csv}")
+        tqdm.write(f"Appended {len(kept)} rows to {paths.briefs_articles_csv}")
 
     if TOPIC_GARDENER_ENABLED and not dry_run and kept:
         topics_dir.mkdir(parents=True, exist_ok=True)
-        run_topic_gardener(topics_dir, brief_path, topic)
+        run_topic_gardener(
+            topics_dir, brief_path, topic,
+            logs_dir=paths.logs_dir, week_of=week_of,
+        )

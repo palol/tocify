@@ -1,7 +1,8 @@
-import os, re, math, hashlib
+import os, re, math, hashlib, sys
 from datetime import date, datetime, time as dt_time, timezone, timedelta
 
 import feedparser
+from tqdm import tqdm
 from dateutil import parser as dtparser
 from dotenv import load_dotenv
 
@@ -153,19 +154,29 @@ def keyword_prefilter(items: list[dict], keywords: list[str], keep_top: int) -> 
 
 
 # ---- triage (backend-agnostic batch loop) ----
-def triage_in_batches(interests: dict, items: list[dict], batch_size: int, triage_fn) -> dict:
+def triage_in_batches(
+    interests: dict,
+    items: list[dict],
+    batch_size: int,
+    triage_fn,
+    progress_disable: bool | None = None,
+) -> dict:
     """triage_fn(interests, batch) -> dict with keys notes, ranked (and optionally week_of)."""
     week_of = datetime.now(timezone.utc).date().isoformat()
     total = math.ceil(len(items) / batch_size)
     all_ranked, notes_parts = [], []
+    disable = progress_disable if progress_disable is not None else not sys.stderr.isatty()
 
-    for i in range(0, len(items), batch_size):
-        batch = items[i:i + batch_size]
-        print(f"Triage batch {i // batch_size + 1}/{total} ({len(batch)} items)")
-        res = triage_fn(interests, batch)
-        if res.get("notes", "").strip():
-            notes_parts.append(res["notes"].strip())
-        all_ranked.extend(res.get("ranked", []))
+    batch_starts = range(0, len(items), batch_size)
+    with tqdm(batch_starts, desc="Triage", unit="batch", total=total, disable=disable) as pbar:
+        for i in pbar:
+            batch = items[i : i + batch_size]
+            batch_num = i // batch_size + 1
+            pbar.set_postfix_str(f"batch {batch_num}/{total}, {len(batch)} items")
+            res = triage_fn(interests, batch)
+            if res.get("notes", "").strip():
+                notes_parts.append(res["notes"].strip())
+            all_ranked.extend(res.get("ranked", []))
 
     best = {}
     for r in all_ranked:

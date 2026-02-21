@@ -1,10 +1,13 @@
 """CLI entrypoint: weekly, monthly, annual-review, list-topics, clear-topic, process-whole-year, calculate-weeks."""
 
 import argparse
+import datetime as dt
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+from tqdm import tqdm
 
 from tocify.runner.vault import list_topics, VAULT_ROOT
 from tocify.runner.weekly import run_weekly, parse_week_spec
@@ -71,34 +74,42 @@ def cmd_process_whole_year(args: argparse.Namespace) -> None:
     vault = getattr(args, "vault", None)
     root = vault or VAULT_ROOT
 
-    import datetime as dt
     last_week = dt.date(year, 12, 28).isocalendar()[1]
-    for week in range(1, last_week + 1):
-        week_spec = f"{year} week {week}"
-        if dry_run:
-            print(f"[DRY-RUN] weekly --topic {topic} {week_spec}")
-        else:
-            print(f"[weekly] {year} week {week} (topic={topic})")
-            run_weekly(topic=topic, week_spec=week_spec, vault_root=root)
+    n_weeks = last_week
+    n_months = 12
+    total_steps = n_weeks + n_months + 1
+    disable_progress = not sys.stderr.isatty()
 
-    for month in range(1, 13):
-        month_id = f"{year}-{month:02d}"
+    with tqdm(total=total_steps, desc="process-whole-year", unit="step", disable=disable_progress) as pbar:
+        for week in range(1, last_week + 1):
+            week_spec = f"{year} week {week}"
+            pbar.set_description(f"Week {week}/{n_weeks}")
+            if dry_run:
+                tqdm.write(f"[DRY-RUN] weekly --topic {topic} {week_spec}")
+            else:
+                run_weekly(topic=topic, week_spec=week_spec, vault_root=root)
+            pbar.update(1)
+
+        for month in range(1, 13):
+            month_id = f"{year}-{month:02d}"
+            pbar.set_description(f"Month {month}/{n_months}")
+            if dry_run:
+                tqdm.write(f"[DRY-RUN] monthly --topic {topic} --month {month_id}")
+            else:
+                monthly_main(topic=topic, month=month_id, vault_root=root)
+            pbar.update(1)
+
+        pbar.set_description("Annual review")
         if dry_run:
-            print(f"[DRY-RUN] monthly --topic {topic} --month {month_id}")
+            tqdm.write(f"[DRY-RUN] annual-review --topic {topic} --year {year}")
         else:
-            print(f"[monthly] {month_id} (topic={topic})")
-            monthly_main(topic=topic, month=month_id, vault_root=root)
+            annual_main(year=year, topic=topic, vault_root=root)
+        pbar.update(1)
 
     if dry_run:
-        print(f"[DRY-RUN] annual-review --topic {topic} --year {year}")
+        tqdm.write("=== DRY-RUN complete ===")
     else:
-        print(f"[annual] {year} (topic={topic})")
-        annual_main(year=year, topic=topic, vault_root=root)
-
-    if dry_run:
-        print("=== DRY-RUN complete ===")
-    else:
-        print("=== Done: weekly briefs, monthly roundups, and annual review ===")
+        tqdm.write("=== Done: weekly briefs, monthly roundups, and annual review ===")
 
 
 def cmd_calculate_weeks(args: argparse.Namespace) -> None:
