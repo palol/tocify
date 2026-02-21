@@ -33,6 +33,7 @@ def cmd_weekly(args: argparse.Namespace) -> None:
         week_spec=args.week_spec,
         dry_run=args.dry_run or 0,
         vault_root=vault,
+        limit=getattr(args, "limit", None),
     )
 
 
@@ -192,6 +193,7 @@ def main() -> None:
     p_weekly.add_argument("--topic", type=str, default="bci")
     p_weekly.add_argument("week_spec", nargs="?", type=str, default=None, help="e.g. '2025 week 2'")
     p_weekly.add_argument("--dry-run", nargs="?", const=10, type=int, metavar="N", default=0, help="Cap to N items, no CSV append")
+    p_weekly.add_argument("--limit", type=int, default=None, metavar="N", help="Cap items to N before triage (full pipeline: CSV append and gardener still run)")
     p_weekly.set_defaults(run=cmd_weekly)
 
     # monthly

@@ -1221,6 +1221,7 @@ def run_weekly(
     week_spec: str | None = None,
     dry_run: int = 0,
     vault_root: Path | None = None,
+    limit: int | None = None,
 ) -> None:
     """Run weekly digest for one topic. Uses tocify for fetch/prefilter/triage/render params; runner adds vault, redundancy, gardener."""
     root = vault_root or VAULT_ROOT
@@ -1320,6 +1321,9 @@ def run_weekly(
     if dry_run:
         items = items[:dry_run]
         print(f"Dry run: capped to {len(items)} items (no CSV append)")
+    elif limit is not None:
+        items = items[:limit]
+        print(f"Limit: capped to {len(items)} items (full pipeline)")
 
     tqdm.write(f"Sending {len(items)} RSS items to model (post-filter)")
 
