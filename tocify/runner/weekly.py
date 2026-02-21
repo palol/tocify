@@ -13,7 +13,10 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from dotenv import load_dotenv
-from newspaper import Article
+try:
+    from newspaper import Article
+except Exception:  # pragma: no cover - optional dependency
+    Article = None
 
 import tocify
 from tocify.runner.vault import get_topic_paths, VAULT_ROOT
@@ -46,6 +49,7 @@ TRACKING_PARAMS = frozenset({
     "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
     "fbclid", "gclid", "msclkid", "ref", "mc_cid", "mc_eid", "_ga",
 })
+URL_IN_TEXT_RE = re.compile(r"https?://[^\s<>()\]\}]+", re.IGNORECASE)
 
 
 def parse_week_spec(s: str) -> str:
@@ -111,6 +115,8 @@ def load_recent_topic_files(topics_dir: Path, max_age_days: int) -> list[Path]:
 
 
 def enrich_item_with_newspaper(item: dict, timeout: int) -> dict:
+    if Article is None:
+        return item
     link = (item.get("link") or "").strip()
     if not link:
         return item
@@ -218,6 +224,7 @@ Below are (1) this week's weekly brief, and (2) existing topic files. Propose **
 Rules:
 - **create**: New topic when the brief introduces a distinct theme. Use lowercase-hyphen slug. Include title, body_markdown, sources, links_to.
 - **update**: When an item adds to an existing topic. Provide slug, append_sources, optionally summary_addendum.
+- Every markdown text addition must include source attribution using markdown footnotes with URL definitions, e.g. [^1] and [^1]: https://example.com.
 
 This week's brief (category: {topic}):
 {brief_content}
@@ -228,6 +235,43 @@ Existing topic files (slug and preview):
 Return **only** a single JSON object. Schema:
 {{"topic_actions": [{{ "action": "create" | "update", "slug": "<slug>", "title": "<title>", "body_markdown": "<markdown>", "sources": ["url"], "links_to": ["slug"], "append_sources": ["url"], "summary_addendum": "<markdown>" }}]}}
 Omit topic_actions or use [] if nothing to do."""
+
+
+def _dedupe_urls(urls: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in urls:
+        u = str(raw).strip()
+        if not u:
+            continue
+        if u in seen:
+            continue
+        seen.add(u)
+        out.append(u)
+    return out
+
+
+def _extract_urls_from_markdown(text: str) -> list[str]:
+    urls = []
+    for m in URL_IN_TEXT_RE.findall(text or ""):
+        u = m.rstrip(".,;:!?)\"'")
+        if u:
+            urls.append(u)
+    return _dedupe_urls(urls)
+
+
+def _with_source_footnotes(markdown: str, source_urls: list[str]) -> str:
+    body = (markdown or "").strip()
+    sources = _dedupe_urls(source_urls)
+    if not sources:
+        return body
+
+    markers = "".join(f"[^{i}]" for i in range(1, len(sources) + 1))
+    defs = "\n".join(f"[^{i}]: {u}" for i, u in enumerate(sources, start=1))
+
+    if body:
+        return f"{body} {markers}\n\n{defs}"
+    return f"{markers}\n\n{defs}"
 
 
 def _list_existing_topic_previews(topics_dir: Path, max_preview_chars: int = 400) -> list[dict]:
@@ -292,8 +336,12 @@ def _apply_topic_action(topics_dir: Path, action: dict, today: str) -> None:
         body_markdown = (action.get("body_markdown") or "").strip()
         sources = action.get("sources") if isinstance(action.get("sources"), list) else []
         sources = [str(s).strip() for s in sources if str(s).strip()]
+        sources = _dedupe_urls(sources + _extract_urls_from_markdown(body_markdown))
         links_to = action.get("links_to") if isinstance(action.get("links_to"), list) else []
         links_to = [str(s).strip() for s in links_to if str(s).strip()]
+        if body_markdown and not sources:
+            raise ValueError("create action has body_markdown but no source URLs")
+        body_with_footnotes = _with_source_footnotes(body_markdown, sources)
         frontmatter_lines = ["---", f'title: "{title}"', f'updated: "{today}"']
         if sources:
             frontmatter_lines.append("sources:")
@@ -304,7 +352,7 @@ def _apply_topic_action(topics_dir: Path, action: dict, today: str) -> None:
             for s in links_to:
                 frontmatter_lines.append(f'  - "{s}"')
         frontmatter_lines.append("---")
-        path.write_text("\n".join(frontmatter_lines) + "\n\n" + body_markdown, encoding="utf-8")
+        path.write_text("\n".join(frontmatter_lines) + "\n\n" + body_with_footnotes, encoding="utf-8")
         return
 
     if act == "update" and path.exists():
@@ -313,10 +361,18 @@ def _apply_topic_action(topics_dir: Path, action: dict, today: str) -> None:
             append_sources = [str(s).strip() for s in append_sources if str(s).strip()]
         else:
             append_sources = []
+        append_sources = _dedupe_urls(append_sources)
         summary_addendum = (action.get("summary_addendum") or "").strip()
         to_append = []
+        sources_for_summary = _dedupe_urls(append_sources + _extract_urls_from_markdown(summary_addendum))
         if summary_addendum:
-            to_append.append(f"\n\n## Recent update ({today})\n\n{summary_addendum}")
+            if not sources_for_summary:
+                raise ValueError("update action has summary_addendum but no source URLs")
+            summary_with_footnotes = _with_source_footnotes(summary_addendum, sources_for_summary)
+            to_append.append(f"\n\n## Recent update ({today})\n\n{summary_with_footnotes}")
+        elif append_sources:
+            source_note = _with_source_footnotes("Source refresh.", append_sources)
+            to_append.append(f"\n\n## Recent update ({today})\n\n{source_note}")
         if append_sources:
             to_append.append("\n\n### New sources\n\n" + "\n".join(f"- {u}" for u in append_sources))
         if to_append:
