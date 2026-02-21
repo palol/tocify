@@ -1028,11 +1028,13 @@ def run_topic_gardener(
     topic: str,
     logs_dir: Path | None = None,
     week_of: str | None = None,
+    allowed_source_url_index: dict[str, str] | None = None,
 ) -> None:
     topics_dir.mkdir(parents=True, exist_ok=True)
     if not brief_path.exists():
         return
     brief_content = brief_path.read_text(encoding="utf-8")
+    brief_meta = _extract_brief_metadata(brief_path)
     existing_topics = _list_existing_topic_previews(topics_dir)
     disable = not sys.stderr.isatty()
     with tqdm(desc="Topic gardener (agent)", total=None, unit="", disable=disable):
@@ -1049,7 +1051,16 @@ def run_topic_gardener(
     applied = 0
     for a in tqdm(valid_actions, desc="Topic gardener (apply)", unit="action", disable=disable):
         try:
-            _apply_topic_action(topics_dir, a, today)
+            _apply_topic_action(
+                topics_dir,
+                a,
+                today,
+                default_tags=brief_meta["tags"],
+                topic=topic,
+                triage_backend=brief_meta["triage_backend"],
+                triage_model=brief_meta["triage_model"],
+                allowed_source_url_index=allowed_source_url_index,
+            )
             applied += 1
         except Exception as e:
             tqdm.write(f"[WARN] Topic gardener: failed to apply action {a.get('slug', '?')}: {e}")
@@ -1380,5 +1391,7 @@ def run_weekly(
             topics_dir,
             brief_path,
             topic,
+            logs_dir=paths.logs_dir,
+            week_of=week_of,
             allowed_source_url_index=_build_allowed_source_url_index(kept_items_for_sources),
         )
