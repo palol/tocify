@@ -209,7 +209,6 @@ __marimo__/
 
 # uv
 uv.lock
-pyproject.toml
 
 # actual newsletter
 contents/
