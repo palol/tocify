@@ -84,8 +84,8 @@ def load_briefs_for_date_range(
     start_date: dt.date, end_date: dt.date, topic: str, vault_root: Path | None = None
 ) -> list[Path]:
     """Load weekly briefs for the topic that fall within the date range."""
-    root = vault_root or VAULT_ROOT
-    briefs_dir = root / "content" / "briefs"
+    paths = get_topic_paths(topic, vault_root)
+    briefs_dir = paths.briefs_dir
     briefs = []
     if not briefs_dir.exists():
         return briefs
@@ -109,8 +109,8 @@ def load_monthly_roundups_for_year(
     year: int, topic: str, vault_root: Path | None = None
 ) -> list[Path]:
     """Load monthly roundups for the topic and year, sorted chronologically."""
-    root = vault_root or VAULT_ROOT
-    briefs_dir = root / "content" / "briefs"
+    paths = get_topic_paths(topic, vault_root)
+    briefs_dir = paths.briefs_dir
     roundups: list[tuple[dt.date, Path]] = []
     if not briefs_dir.exists():
         return []
@@ -207,10 +207,6 @@ def _maybe_expand_prompt(
     if not should_expand:
         return prompt, [], 0
     return _expand_prompt_references(prompt)
-
-
-def _extract_json_object_text(response_text: str) -> str:
-    return extract_first_json_object(response_text)
 
 
 def _run_openai_prompt(
@@ -490,7 +486,7 @@ def run_structured_prompt(
     if not response_text:
         raise ValueError("No JSON object found in model output")
     try:
-        return json.loads(_extract_json_object_text(response_text))
+        return json.loads(extract_first_json_object(response_text))
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON in model output: {e}") from e
 

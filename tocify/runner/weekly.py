@@ -445,10 +445,6 @@ def _resolve_allowed_source_url(
     return ""
 
 
-def _extract_urls_from_markdown(text: str) -> list[str]:
-    return _dedupe_urls(extract_urls_from_markdown(text))
-
-
 def _merge_unique(values: list[str]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
@@ -607,7 +603,7 @@ def _resolve_update_bullet_sources(
         return mapped
 
     fallback_sources = _filter_urls_to_allowed(
-        append_sources + _extract_urls_from_markdown(summary_addendum),
+        append_sources + extract_urls_from_markdown(summary_addendum),
         allowed_source_url_index,
     )
     if not fallback_sources:
@@ -616,7 +612,7 @@ def _resolve_update_bullet_sources(
     resolved: list[str] = []
     for idx, bullet in enumerate(summary_bullets):
         bullet_url = ""
-        for candidate in _extract_urls_from_markdown(bullet):
+        for candidate in extract_urls_from_markdown(bullet):
             canonical = _resolve_allowed_source_url(candidate, "", allowed_source_url_index)
             if canonical:
                 bullet_url = canonical
@@ -899,7 +895,7 @@ def _apply_topic_action(
         sources = action.get("sources") if isinstance(action.get("sources"), list) else []
         sources = [str(s).strip() for s in sources if str(s).strip()]
         sources = _filter_urls_to_allowed(
-            sources + _extract_urls_from_markdown(body_markdown),
+            sources + extract_urls_from_markdown(body_markdown),
             allowed_source_url_index,
         )
         links_to = action.get("links_to") if isinstance(action.get("links_to"), list) else []
