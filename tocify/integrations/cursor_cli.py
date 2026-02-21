@@ -5,7 +5,11 @@ import os
 import subprocess
 import time
 
-from tocify.integrations._shared import build_triage_prompt, parse_structured_response
+from tocify.integrations._shared import (
+    build_triage_prompt,
+    extract_first_json_object,
+    parse_structured_response,
+)
 
 SUMMARY_MAX_CHARS = int(os.getenv("SUMMARY_MAX_CHARS", "500"))
 # Subprocess timeout (seconds); large batches may need more. 0 = no timeout.
@@ -15,7 +19,7 @@ CURSOR_RETRIES = max(1, int(os.getenv("TOCIFY_CURSOR_RETRIES", "2")))
 # Must match SCHEMA in _shared (Cursor has no structured-output API)
 CURSOR_PROMPT_SUFFIX = """
 
-Return **only** a single JSON object, no markdown code fences, no commentary. Schema:
+Return **only** a single JSON object, no markdown code fences, no commentary. Escape any double quotes inside string values with backslash (\\"). Schema:
 {"week_of": "<ISO date>", "notes": "<string>", "ranked": [{"id": "<string>", "title": "<string>", "link": "<string>", "source": "<string>", "published_utc": "<string|null>", "score": <0-1>, "why": "<string>", "tags": ["<string>"]}]}
 """
 
@@ -47,11 +51,8 @@ def call_cursor_triage(interests: dict, items: list[dict], prompt_path: str | No
                     f"cursor CLI exit {result.returncode}: {result.stderr or result.stdout or 'no output'}"
                 )
             response_text = (result.stdout or "").strip()
-            start = response_text.find("{")
-            end = response_text.rfind("}") + 1
-            if start < 0 or end <= start:
-                raise ValueError("No JSON object found in Cursor output")
-            return parse_structured_response(response_text[start:end])
+            extracted = extract_first_json_object(response_text)
+            return parse_structured_response(extracted)
         except (ValueError, json.JSONDecodeError, RuntimeError, subprocess.TimeoutExpired) as e:
             last = e
             if attempt == 0:

@@ -5,7 +5,12 @@ import os
 import time
 from typing import Any
 
-from tocify.integrations._shared import SCHEMA, build_triage_prompt, parse_structured_response
+from tocify.integrations._shared import (
+    SCHEMA,
+    build_triage_prompt,
+    extract_first_json_object,
+    parse_structured_response,
+)
 
 SUMMARY_MAX_CHARS = int(os.getenv("SUMMARY_MAX_CHARS", "500"))
 
@@ -50,11 +55,8 @@ def _parse_response_text(response_text: str) -> dict:
     try:
         return parse_structured_response(response_text)
     except (json.JSONDecodeError, ValueError):
-        start = response_text.find("{")
-        end = response_text.rfind("}") + 1
-        if start < 0 or end <= start:
-            raise
-        return parse_structured_response(response_text[start:end])
+        extracted = extract_first_json_object(response_text)
+        return parse_structured_response(extracted)
 
 
 def call_gemini_triage(client: Any, interests: dict, items: list[dict]) -> dict:

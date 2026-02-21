@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from tocify.integrations import resolve_backend_name
+from tocify.integrations._shared import extract_first_json_object
 
 VAULT_ROOT = Path(os.environ.get("BCI_VAULT_ROOT", ".")).resolve()
 CONFIG_DIR = VAULT_ROOT / "config"
@@ -220,11 +221,7 @@ def _maybe_expand_prompt(
 
 
 def _extract_json_object_text(response_text: str) -> str:
-    start = response_text.find("{")
-    end = response_text.rfind("}") + 1
-    if start < 0 or end <= start:
-        raise ValueError("No JSON object found in model output")
-    return response_text[start:end]
+    return extract_first_json_object(response_text)
 
 
 def _run_openai_prompt(

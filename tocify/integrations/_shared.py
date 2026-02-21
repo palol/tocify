@@ -70,9 +70,62 @@ def build_triage_prompt(
     return (prompt, lean_items)
 
 
+def extract_first_json_object(response_text: str) -> str:
+    """Extract the first top-level {...} from text, respecting string boundaries."""
+    start = response_text.find("{")
+    if start < 0:
+        raise ValueError("No JSON object found in response")
+    depth = 0
+    i = start
+    in_string = False
+    escape_next = False
+    n = len(response_text)
+    while i < n:
+        c = response_text[i]
+        if escape_next:
+            escape_next = False
+            i += 1
+            continue
+        if in_string:
+            if c == "\\":
+                escape_next = True
+            elif c == '"':
+                in_string = False
+            i += 1
+            continue
+        if c == '"':
+            in_string = True
+            i += 1
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return response_text[start : i + 1]
+        i += 1
+    raise ValueError("JSON object in response is truncated or unclosed (brace count did not reach 0)")
+
+
 def parse_structured_response(response_text: str) -> dict:
     """Parse JSON from a structured-output response; validate 'ranked' exists."""
-    data = json.loads(response_text)
+    try:
+        data = json.loads(response_text)
+    except json.JSONDecodeError as e:
+        pos = getattr(e, "pos", None)
+        snippet = ""
+        if pos is not None and 0 <= pos <= len(response_text):
+            lo = max(0, pos - 40)
+            hi = min(len(response_text), pos + 40)
+            snippet = response_text[lo:hi]
+            if lo > 0:
+                snippet = "..." + snippet
+            if hi < len(response_text):
+                snippet = snippet + "..."
+            snippet = repr(snippet)
+        msg = f"{e}. {snippet}" if snippet else str(e)
+        msg += " Check for unescaped double quotes in string values, truncation, or multiple JSON objects."
+        raise ValueError(msg) from e
     if not isinstance(data, dict) or "ranked" not in data:
         raise ValueError("Response missing required 'ranked' field")
     return data
