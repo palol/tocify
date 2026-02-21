@@ -124,6 +124,31 @@ class TopicGardenerFootnoteTests(unittest.TestCase):
             self.assertIn("- First fact.", content)
             self.assertIn("- Second fact at https://example.com/policy.", content)
 
+    def test_normalize_to_fact_bullets_skips_footnote_definition_lines(self) -> None:
+        normalized = WEEKLY._normalize_to_fact_bullets(
+            "A new benchmark was released.[^1]\n[^1]: https://example.com/benchmark"
+        )
+        self.assertIn("- A new benchmark was released.[^1]", normalized)
+        self.assertNotIn("- [^1]: https://example.com/benchmark", normalized)
+
+    def test_create_does_not_convert_footnote_definitions_into_bullets(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            _apply_topic_action(
+                tmp_path,
+                {
+                    "action": "create",
+                    "slug": "benchmarks",
+                    "title": "Benchmarks",
+                    "body_markdown": "Primary finding.[^1]\n[^1]: https://example.com/source",
+                    "sources": ["https://example.com/source"],
+                    "links_to": [],
+                },
+                "2026-02-20",
+            )
+            content = _read(tmp_path / "benchmarks.md")
+            self.assertNotIn("- [^1]: https://example.com/source", content)
+
     def test_create_adds_footnotes_from_sources(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             tmp_path = Path(td)

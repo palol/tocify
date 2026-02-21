@@ -457,6 +457,9 @@ def _normalize_to_fact_bullets(markdown: str) -> str:
                 facts.append(fact)
             continue
 
+        if FOOTNOTE_DEF_LINE_RE.match(line):
+            continue
+
         line = re.sub(r"^#{1,6}\s+", "", line).strip()
         segments = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9\[])", line)
         for seg in segments:

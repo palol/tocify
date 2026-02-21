@@ -520,7 +520,12 @@ def run_structured_prompt(
         raise ValueError(f"Invalid JSON in model output: {e}") from e
 
 
-def _build_prompt_log(result: PromptRunResult, final_output: str, used_fallback: bool) -> str:
+def _build_prompt_log(
+    result: PromptRunResult,
+    final_output: str,
+    used_fallback: bool,
+    preserved_agent_file: bool,
+) -> str:
     lines = [
         f"backend={result.backend}",
         f"model={result.model}",
@@ -529,6 +534,7 @@ def _build_prompt_log(result: PromptRunResult, final_output: str, used_fallback:
         f"expanded_refs={len(result.refs)}",
         f"expanded_ref_chars={result.ref_chars}",
         f"used_fallback={used_fallback}",
+        f"preserved_agent_file={preserved_agent_file}",
         f"output_chars={len(final_output)}",
     ]
     if result.command:
@@ -557,6 +563,13 @@ def run_agent_and_save_output(
     """Run content generation and save output/log."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    output_pre_exists = output_path.exists()
+    output_pre_mtime_ns: int | None = None
+    if output_pre_exists:
+        try:
+            output_pre_mtime_ns = output_path.stat().st_mtime_ns
+        except OSError:
+            output_pre_mtime_ns = None
 
     result = run_backend_prompt(
         prompt,
@@ -567,7 +580,43 @@ def run_agent_and_save_output(
         raise_on_error=False,
     )
 
-    final_output = result.output_text or fallback_content
-    used_fallback = not bool(result.output_text)
-    output_path.write_text(final_output, encoding="utf-8")
-    log_path.write_text(_build_prompt_log(result, final_output, used_fallback), encoding="utf-8")
+    response_text = (result.output_text or "").strip()
+    used_fallback = not bool(response_text)
+    preserved_agent_file = False
+
+    if used_fallback:
+        output_post_exists = output_path.exists()
+        output_post_mtime_ns: int | None = None
+        if output_post_exists:
+            try:
+                output_post_mtime_ns = output_path.stat().st_mtime_ns
+            except OSError:
+                output_post_mtime_ns = None
+
+        file_changed_during_run = False
+        if output_post_exists and not output_pre_exists:
+            file_changed_during_run = True
+        elif output_pre_exists and output_post_exists:
+            if output_pre_mtime_ns is not None and output_post_mtime_ns is not None:
+                file_changed_during_run = output_post_mtime_ns != output_pre_mtime_ns
+            else:
+                file_changed_during_run = True
+
+        if file_changed_during_run and output_post_exists:
+            preserved_agent_file = True
+            used_fallback = False
+            try:
+                final_output = output_path.read_text(encoding="utf-8")
+            except OSError:
+                final_output = ""
+        else:
+            final_output = fallback_content
+            output_path.write_text(final_output, encoding="utf-8")
+    else:
+        final_output = response_text
+        output_path.write_text(final_output, encoding="utf-8")
+
+    log_path.write_text(
+        _build_prompt_log(result, final_output, used_fallback, preserved_agent_file),
+        encoding="utf-8",
+    )
