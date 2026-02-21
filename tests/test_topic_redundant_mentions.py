@@ -121,7 +121,7 @@ class TopicRedundantMentionsTests(unittest.TestCase):
         self.assertEqual(len(mentions), 1)
         self.assertEqual(mentions[0]["source_url"], "https://example.com/a")
 
-    def test_apply_redundant_mention_to_body_adds_footnote_and_updates_count(self) -> None:
+    def test_apply_redundant_mention_to_body_adds_footnote_without_updating_existing_count_suffix(self) -> None:
         body = (
             "- Existing fact. [^1] _(mentions: 1 sources)_\n\n"
             "[^1]: https://example.com/old"
@@ -132,7 +132,19 @@ class TopicRedundantMentionsTests(unittest.TestCase):
             "https://example.com/new",
         )
         self.assertEqual(status, "applied")
-        self.assertIn("- Existing fact. [^1][^2] _(mentions: 2 sources)_", updated)
+        self.assertIn("- Existing fact. [^1][^2] _(mentions: 1 sources)_", updated)
+        self.assertIn("[^2]: https://example.com/new", updated)
+
+    def test_apply_redundant_mention_to_body_adds_footnote_without_adding_count_suffix(self) -> None:
+        body = "- Existing fact. [^1]\n\n[^1]: https://example.com/old"
+        updated, status = WEEKLY._apply_redundant_mention_to_body(
+            body,
+            "- Existing fact.",
+            "https://example.com/new",
+        )
+        self.assertEqual(status, "applied")
+        self.assertIn("- Existing fact. [^1][^2]", updated)
+        self.assertNotIn("_(mentions:", updated)
         self.assertIn("[^2]: https://example.com/new", updated)
 
     def test_apply_redundant_mention_to_body_noop_when_already_recorded(self) -> None:
@@ -185,8 +197,54 @@ class TopicRedundantMentionsTests(unittest.TestCase):
         self.assertEqual(frontmatter.get("lastmod"), "2026-02-21")
         self.assertEqual(frontmatter.get("updated"), "2026-02-21")
         self.assertIn("https://example.com/new", frontmatter.get("sources", []))
-        self.assertIn("- Existing fact. [^1][^2] _(mentions: 2 sources)_", content)
+        self.assertIn("- Existing fact. [^1][^2] _(mentions: 1 sources)_", content)
         self.assertIn("[^2]: https://example.com/new", content)
+
+    def test_call_topic_redundancy_prompt_excludes_frontmatter_and_footnote_definitions(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            topic_path = root / "topics" / "bci.md"
+            topic_path.parent.mkdir(parents=True, exist_ok=True)
+            topic_path.write_text(
+                (
+                    "---\n"
+                    "title: \"BCI\"\n"
+                    "sources:\n"
+                    "  - \"https://example.com/old\"\n"
+                    "---\n\n"
+                    "- Existing fact. [^1]\n\n"
+                    "[^1]: https://example.com/old\n"
+                ),
+                encoding="utf-8",
+            )
+            captured_prompt: dict[str, str] = {}
+
+            def _fake_call(prompt, **_kwargs):
+                captured_prompt["value"] = prompt
+                return {"redundant_ids": [], "redundant_mentions": []}
+
+            original_call = WEEKLY.run_structured_prompt
+            try:
+                WEEKLY.run_structured_prompt = _fake_call
+                WEEKLY._call_cursor_topic_redundancy(
+                    [topic_path],
+                    [
+                        {
+                            "id": "item-1",
+                            "title": "Paper A",
+                            "link": "https://example.com/a",
+                            "source": "Journal A",
+                            "summary": "Summary A",
+                        }
+                    ],
+                )
+            finally:
+                WEEKLY.run_structured_prompt = original_call
+
+        prompt = captured_prompt.get("value", "")
+        self.assertIn("- Existing fact. [^1]", prompt)
+        self.assertNotIn("[^1]: https://example.com/old", prompt)
+        self.assertNotIn("sources:\n", prompt)
 
     def test_run_weekly_applies_mentions_when_not_dry_run(self) -> None:
         weekly = _load_weekly_module()

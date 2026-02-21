@@ -171,6 +171,7 @@ Return **only** a single JSON object, no markdown code fences, no commentary. Sc
 Rules for redundant_mentions:
 - Include one record only when the item is redundant due to repeated knowledge already captured by a specific topic fact bullet.
 - `matched_fact_bullet` must copy the exact bullet line from the topic markdown.
+- Ignore YAML frontmatter fields and footnote definition lines (e.g., `[^1]: https://...`) during matching.
 - `source_url` should be the candidate item's link URL.
 - If no repeated-fact match is available, use an empty list.
 List the "id" of each candidate item that is redundant."""
@@ -199,10 +200,38 @@ TOPIC_REDUNDANCY_SCHEMA = {
 }
 
 
+def _sanitize_topic_body_for_redundancy(body: str) -> str:
+    lines: list[str] = []
+    for raw_line in (body or "").splitlines():
+        if FOOTNOTE_DEF_LINE_RE.match(raw_line.strip()):
+            continue
+        lines.append(raw_line.rstrip())
+    return "\n".join(lines).strip()
+
+
+def _render_topic_refs_for_redundancy(topic_paths: list[Path]) -> str:
+    refs: list[str] = []
+    for path in topic_paths:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        _, body = split_frontmatter_and_body(text)
+        sanitized = _sanitize_topic_body_for_redundancy(body)
+        if not sanitized:
+            continue
+        refs.append(
+            f"[BEGIN TOPIC: {path.stem} @ {path.resolve()}]\n"
+            f"{sanitized}\n"
+            f"[END TOPIC: {path.stem}]"
+        )
+    return "\n\n".join(refs)
+
+
 def _call_cursor_topic_redundancy(topic_paths: list[Path], items: list[dict]) -> tuple[set[str], list[dict]]:
     if not topic_paths or not items:
         return set(), []
-    topic_refs = "\n".join(f"@{p.resolve()}" for p in topic_paths)
+    topic_refs = _render_topic_refs_for_redundancy(topic_paths) or "(no readable topic content)"
     lean_items = [
         {
             "id": it["id"],
@@ -498,11 +527,6 @@ def _next_footnote_index(definitions: dict[int, str]) -> int:
     return max(definitions.keys(), default=0) + 1
 
 
-def _upsert_inline_mentions_count(bullet_line: str, mention_count: int) -> str:
-    base = MENTIONS_SUFFIX_RE.sub("", bullet_line).rstrip()
-    return f"{base} _(mentions: {mention_count} sources)_"
-
-
 def _apply_redundant_mention_to_body(body: str, matched_fact_bullet: str, source_url: str) -> tuple[str, str]:
     lines = (body or "").splitlines()
     target = _normalize_fact_for_match(matched_fact_bullet)
@@ -529,7 +553,13 @@ def _apply_redundant_mention_to_body(body: str, matched_fact_bullet: str, source
     created_defs: list[tuple[int, str]] = []
 
     line = lines[bullet_idx]
-    line_without_suffix = MENTIONS_SUFFIX_RE.sub("", line).rstrip()
+    suffix_match = MENTIONS_SUFFIX_RE.search(line)
+    line_suffix = ""
+    if suffix_match:
+        line_without_suffix = line[:suffix_match.start()].rstrip()
+        line_suffix = line[suffix_match.start():]
+    else:
+        line_without_suffix = line.rstrip()
     marker_indices = {int(x) for x in FOOTNOTE_MARKER_RE.findall(line_without_suffix)}
     line_urls = {definitions[i] for i in marker_indices if i in definitions}
 
@@ -548,9 +578,7 @@ def _apply_redundant_mention_to_body(body: str, matched_fact_bullet: str, source
             line_without_suffix = f"{line_without_suffix}{spacer}{marker}"
             changed = True
 
-    marker_indices = {int(x) for x in FOOTNOTE_MARKER_RE.findall(line_without_suffix)}
-    unique_marker_urls = {definitions[i] for i in marker_indices if i in definitions}
-    updated_line = _upsert_inline_mentions_count(line_without_suffix, len(unique_marker_urls))
+    updated_line = f"{line_without_suffix}{line_suffix}"
     if updated_line != line:
         lines[bullet_idx] = updated_line
         changed = True
