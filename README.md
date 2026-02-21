@@ -120,6 +120,9 @@ Weekly brief generation now canonicalizes `## [Title](url)` heading links using 
 - **Clear topic data**: `tocify-runner clear-topic bci --yes`
 - **Process whole year**: `tocify-runner process-whole-year 2025 --topic bci`
 - **Calculate weeks**: `tocify-runner calculate-weeks 2026-01`
+- **Initialize Quartz scaffold**: `tocify-runner init-quartz --target . --write-local-exclude`
+
+`init-quartz` merges Quartz v4 scaffold paths into the target root (including `quartz/` and `content/`) and skips existing files by default. Use `--overwrite` to replace existing files. `--write-local-exclude` writes Quartz ignore rules into `.git/info/exclude` (local-only, not committed).
 
 **Vault layout**
 

@@ -1,17 +1,21 @@
-"""CLI entrypoint: weekly, monthly, annual-review, list-topics, clear-topic, process-whole-year, calculate-weeks."""
+"""CLI entrypoint: weekly, monthly, annual-review, list-topics, clear-topic, process-whole-year, calculate-weeks, init-quartz."""
 
 import argparse
 import os
-import subprocess
 import sys
 from pathlib import Path
 
 from tocify.runner.vault import list_topics, VAULT_ROOT
-from tocify.runner.weekly import run_weekly, parse_week_spec
+from tocify.runner.weekly import run_weekly
 from tocify.runner.monthly import main as monthly_main
 from tocify.runner.annual import main as annual_main
 from tocify.runner.weeks import get_month_metadata, calculate_week_ends
 from tocify.runner.clear import main as clear_main
+from tocify.runner.quartz_init import (
+    DEFAULT_QUARTZ_REF,
+    DEFAULT_QUARTZ_REPO,
+    init_quartz,
+)
 
 
 def _vault_root(args: argparse.Namespace) -> Path | None:
@@ -132,6 +136,40 @@ def cmd_calculate_weeks(args: argparse.Namespace) -> None:
         print(" ".join(week_ends))
 
 
+def cmd_init_quartz(args: argparse.Namespace) -> None:
+    try:
+        result = init_quartz(
+            target=args.target,
+            repo_url=args.repo,
+            quartz_ref=args.quartz_ref,
+            overwrite=getattr(args, "overwrite", False),
+            dry_run=getattr(args, "dry_run", False),
+            write_local_exclude=getattr(args, "write_local_exclude", True),
+        )
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    prefix = "[DRY-RUN] " if getattr(args, "dry_run", False) else ""
+    print(f"{prefix}Quartz scaffold merge summary")
+    print(f"target={result.target}")
+    print(f"source={result.source}")
+    print(f"created={len(result.created)}")
+    print(f"skipped={len(result.skipped)}")
+    print(f"overwritten={len(result.overwritten)}")
+    if result.missing_source_paths:
+        print(f"missing_source_paths={len(result.missing_source_paths)}")
+    if getattr(args, "write_local_exclude", True):
+        if result.local_exclude_updated:
+            print(f"local_exclude=updated ({result.local_exclude_path})")
+        elif result.local_exclude_would_update:
+            print(f"local_exclude=would-update ({result.local_exclude_path})")
+        elif result.local_exclude_path is not None:
+            print(f"local_exclude=unchanged ({result.local_exclude_path})")
+    for warning in result.warnings:
+        print(f"warning={warning}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="tocify-runner", description="Vault/multi-topic runner for tocify")
     parser.add_argument("--vault", type=Path, default=None, help="Vault root (default: BCI_VAULT_ROOT or .)")
@@ -187,6 +225,28 @@ def main() -> None:
     p_weeks.add_argument("--days", action="store_true")
     p_weeks.add_argument("--info", action="store_true")
     p_weeks.set_defaults(run=cmd_calculate_weeks)
+
+    # init-quartz
+    p_quartz = subparsers.add_parser("init-quartz", help="Merge Quartz scaffold into a target directory")
+    p_quartz.add_argument("--target", type=Path, required=True, help="Target directory to receive Quartz scaffold")
+    p_quartz.add_argument("--repo", type=str, default=DEFAULT_QUARTZ_REPO, help="Quartz git repo URL")
+    p_quartz.add_argument("--quartz-ref", type=str, default=DEFAULT_QUARTZ_REF, help="Quartz git ref/tag/branch")
+    p_quartz.add_argument("--overwrite", action="store_true", help="Overwrite existing files")
+    p_quartz.add_argument("--dry-run", action="store_true", help="Show actions without writing files")
+    p_quartz.add_argument(
+        "--write-local-exclude",
+        dest="write_local_exclude",
+        action="store_true",
+        default=True,
+        help="Write Quartz ignore rules into .git/info/exclude",
+    )
+    p_quartz.add_argument(
+        "--no-write-local-exclude",
+        dest="write_local_exclude",
+        action="store_false",
+        help="Skip writing .git/info/exclude rules",
+    )
+    p_quartz.set_defaults(run=cmd_init_quartz)
 
     args = parser.parse_args()
     args.run(args)
