@@ -79,6 +79,26 @@ bioRxiv neuroscience | https://www.biorxiv.org/rss/subject/neuroscience.xml
 
 ---
 
+## Generated Markdown frontmatter (Quartz-friendly)
+
+Newly generated Markdown files include YAML frontmatter with Quartz-compatible keys and tocify metadata.
+
+Core keys:
+- `title`
+- `date`
+- `lastmod`
+- `tags` (AI-suggested, normalized)
+
+Additional metadata:
+- `generator`, `period`, `topic`
+- period keys like `week_of`, `month`, `year`
+- triage provenance: `triage_backend`, `triage_model` (and `triage_backends` / `triage_models` when mixed)
+- per-file stats where applicable (`included`, `scored`, etc.)
+
+This applies to newly generated outputs (`digest.md`, weekly briefs, monthly roundups, annual reviews, topic gardener pages). Existing files are not backfilled automatically.
+
+---
+
 ## Vault / multi-topic runner (`tocify-runner`)
 
 For multiple topics and a shared vault layout, use the **`tocify-runner`** CLI (same package). It uses tocify for RSS fetch, prefilter, triage, and render; adds per-topic feeds/interests, topic redundancy vs a digital garden, topic gardener, and `briefs_articles.csv`.

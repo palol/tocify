@@ -19,6 +19,12 @@ except Exception:  # pragma: no cover - optional dependency
     Article = None
 
 import tocify
+from tocify.frontmatter import (
+    aggregate_ranked_item_tags,
+    normalize_ai_tags,
+    split_frontmatter_and_body,
+    with_frontmatter,
+)
 from tocify.runner.vault import get_topic_paths, VAULT_ROOT
 
 load_dotenv()
@@ -222,8 +228,8 @@ TOPIC_GARDENER_PROMPT = """You are curating a **global digital garden** of everg
 Below are (1) this week's weekly brief, and (2) existing topic files. Propose **create** or **update** actions.
 
 Rules:
-- **create**: New topic when the brief introduces a distinct theme. Use lowercase-hyphen slug. Include title, body_markdown, sources, links_to.
-- **update**: When an item adds to an existing topic. Provide slug, append_sources, optionally summary_addendum.
+- **create**: New topic when the brief introduces a distinct theme. Use lowercase-hyphen slug. Include title, body_markdown, sources, links_to, tags.
+- **update**: When an item adds to an existing topic. Provide slug, append_sources, optionally summary_addendum and tags.
 - Every markdown text addition must include source attribution using markdown footnotes with URL definitions, e.g. [^1] and [^1]: https://example.com.
 
 This week's brief (category: {topic}):
@@ -233,7 +239,7 @@ Existing topic files (slug and preview):
 {existing_topics}
 
 Return **only** a single JSON object. Schema:
-{{"topic_actions": [{{ "action": "create" | "update", "slug": "<slug>", "title": "<title>", "body_markdown": "<markdown>", "sources": ["url"], "links_to": ["slug"], "append_sources": ["url"], "summary_addendum": "<markdown>" }}]}}
+{{"topic_actions": [{{ "action": "create" | "update", "slug": "<slug>", "title": "<title>", "body_markdown": "<markdown>", "sources": ["url"], "links_to": ["slug"], "append_sources": ["url"], "summary_addendum": "<markdown>", "tags": ["tag"] }}]}}
 Omit topic_actions or use [] if nothing to do."""
 
 
@@ -258,6 +264,34 @@ def _extract_urls_from_markdown(text: str) -> list[str]:
         if u:
             urls.append(u)
     return _dedupe_urls(urls)
+
+
+def _string_list(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(v).strip() for v in value if str(v).strip()]
+
+
+def _merge_unique(values: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        value = str(raw or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
+
+
+def _extract_brief_metadata(brief_path: Path) -> dict:
+    if not brief_path.exists():
+        return {"tags": [], "triage_backend": "unknown", "triage_model": "unknown"}
+    frontmatter, _ = split_frontmatter_and_body(brief_path.read_text(encoding="utf-8"))
+    tags = normalize_ai_tags(_string_list(frontmatter.get("tags")))
+    triage_backend = str(frontmatter.get("triage_backend") or "unknown").strip() or "unknown"
+    triage_model = str(frontmatter.get("triage_model") or "unknown").strip() or "unknown"
+    return {"tags": tags, "triage_backend": triage_backend, "triage_model": triage_model}
 
 
 def _with_source_footnotes(markdown: str, source_urls: list[str]) -> str:
@@ -323,13 +357,23 @@ def _call_cursor_topic_gardener(brief_content: str, existing_topics: list[dict],
     return actions
 
 
-def _apply_topic_action(topics_dir: Path, action: dict, today: str) -> None:
+def _apply_topic_action(
+    topics_dir: Path,
+    action: dict,
+    today: str,
+    *,
+    default_tags: list[str] | None = None,
+    topic: str | None = None,
+    triage_backend: str = "unknown",
+    triage_model: str = "unknown",
+) -> None:
     act = (action.get("action") or "").strip().lower()
     slug = (action.get("slug") or "").strip()
     if not slug or act not in ("create", "update"):
         return
     slug = re.sub(r"[^a-z0-9\-]", "", slug.lower().replace("_", "-")) or "untitled"
     path = topics_dir / f"{slug}.md"
+    default_tags = normalize_ai_tags(default_tags or [])
 
     if act == "create":
         title = (action.get("title") or slug).strip()
@@ -339,23 +383,30 @@ def _apply_topic_action(topics_dir: Path, action: dict, today: str) -> None:
         sources = _dedupe_urls(sources + _extract_urls_from_markdown(body_markdown))
         links_to = action.get("links_to") if isinstance(action.get("links_to"), list) else []
         links_to = [str(s).strip() for s in links_to if str(s).strip()]
+        action_tags = normalize_ai_tags(_string_list(action.get("tags")))
+        merged_tags = normalize_ai_tags(_merge_unique(action_tags + default_tags))
         if body_markdown and not sources:
             raise ValueError("create action has body_markdown but no source URLs")
         body_with_footnotes = _with_source_footnotes(body_markdown, sources)
-        frontmatter_lines = ["---", f'title: "{title}"', f'updated: "{today}"']
-        if sources:
-            frontmatter_lines.append("sources:")
-            for u in sources:
-                frontmatter_lines.append(f'  - "{u}"')
-        if links_to:
-            frontmatter_lines.append("links_to:")
-            for s in links_to:
-                frontmatter_lines.append(f'  - "{s}"')
-        frontmatter_lines.append("---")
-        path.write_text("\n".join(frontmatter_lines) + "\n\n" + body_with_footnotes, encoding="utf-8")
+        frontmatter = {
+            "title": title,
+            "date": today,
+            "lastmod": today,
+            "updated": today,
+            "tags": merged_tags,
+            "generator": "tocify-gardener",
+            "period": "evergreen",
+            "topic": topic or None,
+            "triage_backend": triage_backend,
+            "triage_model": triage_model,
+            "sources": sources,
+            "links_to": links_to,
+        }
+        path.write_text(with_frontmatter(body_with_footnotes, frontmatter), encoding="utf-8")
         return
 
     if act == "update" and path.exists():
+        existing_frontmatter, existing_body = split_frontmatter_and_body(path.read_text(encoding="utf-8"))
         append_sources = action.get("append_sources")
         if isinstance(append_sources, list):
             append_sources = [str(s).strip() for s in append_sources if str(s).strip()]
@@ -363,6 +414,9 @@ def _apply_topic_action(topics_dir: Path, action: dict, today: str) -> None:
             append_sources = []
         append_sources = _dedupe_urls(append_sources)
         summary_addendum = (action.get("summary_addendum") or "").strip()
+        action_tags = normalize_ai_tags(_string_list(action.get("tags")))
+        existing_tags = normalize_ai_tags(_string_list(existing_frontmatter.get("tags")))
+        merged_tags = normalize_ai_tags(_merge_unique(existing_tags + action_tags + default_tags))
         to_append = []
         sources_for_summary = _dedupe_urls(append_sources + _extract_urls_from_markdown(summary_addendum))
         if summary_addendum:
@@ -375,9 +429,24 @@ def _apply_topic_action(topics_dir: Path, action: dict, today: str) -> None:
             to_append.append(f"\n\n## Recent update ({today})\n\n{source_note}")
         if append_sources:
             to_append.append("\n\n### New sources\n\n" + "\n".join(f"- {u}" for u in append_sources))
-        if to_append:
-            existing = path.read_text(encoding="utf-8")
-            path.write_text(existing + "".join(to_append), encoding="utf-8")
+        updated_body = existing_body + "".join(to_append)
+        existing_sources = _string_list(existing_frontmatter.get("sources"))
+        merged_sources = _dedupe_urls(existing_sources + append_sources + _extract_urls_from_markdown(summary_addendum))
+        frontmatter = dict(existing_frontmatter)
+        frontmatter["title"] = str(frontmatter.get("title") or slug).strip() or slug
+        frontmatter["date"] = str(frontmatter.get("date") or today)
+        frontmatter["lastmod"] = today
+        frontmatter["updated"] = today
+        frontmatter["tags"] = merged_tags
+        frontmatter["generator"] = "tocify-gardener"
+        frontmatter["period"] = str(frontmatter.get("period") or "evergreen")
+        frontmatter["topic"] = topic or frontmatter.get("topic")
+        frontmatter["triage_backend"] = triage_backend or str(frontmatter.get("triage_backend") or "unknown")
+        frontmatter["triage_model"] = triage_model or str(frontmatter.get("triage_model") or "unknown")
+        frontmatter["sources"] = merged_sources
+        links_to = _string_list(frontmatter.get("links_to"))
+        frontmatter["links_to"] = links_to
+        path.write_text(with_frontmatter(updated_body, frontmatter), encoding="utf-8")
 
 
 def run_topic_gardener(topics_dir: Path, brief_path: Path, topic: str) -> None:
@@ -385,6 +454,7 @@ def run_topic_gardener(topics_dir: Path, brief_path: Path, topic: str) -> None:
     if not brief_path.exists():
         return
     brief_content = brief_path.read_text(encoding="utf-8")
+    brief_meta = _extract_brief_metadata(brief_path)
     existing_topics = _list_existing_topic_previews(topics_dir)
     actions = _call_cursor_topic_gardener(brief_content, existing_topics, topic)
     today = datetime.now(timezone.utc).date().isoformat()
@@ -393,7 +463,15 @@ def run_topic_gardener(topics_dir: Path, brief_path: Path, topic: str) -> None:
         if not isinstance(a, dict):
             continue
         try:
-            _apply_topic_action(topics_dir, a, today)
+            _apply_topic_action(
+                topics_dir,
+                a,
+                today,
+                default_tags=brief_meta["tags"],
+                topic=topic,
+                triage_backend=brief_meta["triage_backend"],
+                triage_model=brief_meta["triage_model"],
+            )
             applied += 1
         except Exception as e:
             print(f"[WARN] Topic gardener: failed to apply action {a.get('slug', '?')}: {e}")
@@ -407,8 +485,12 @@ def render_brief_md(
     week_of = result["week_of"]
     notes = result.get("notes", "").strip()
     ranked = result.get("ranked", [])
+    today = datetime.now(timezone.utc).date().isoformat()
+    title = f"{topic.upper()} Weekly Brief (week of {week_of})"
+    triage_backend = str(result.get("triage_backend") or "unknown")
+    triage_model = str(result.get("triage_model") or "unknown")
 
-    lines = [f"# {topic.upper()} Weekly Brief (week of {week_of})", ""]
+    lines = [f"# {title}", ""]
     if notes:
         lines += [notes, ""]
     lines += [
@@ -438,7 +520,22 @@ def render_brief_md(
         if summary:
             lines += ["<details>", "<summary>RSS summary</summary>", "", summary, "", "</details>", ""]
         lines += ["---", ""]
-    return "\n".join(lines)
+    body = "\n".join(lines)
+    frontmatter = {
+        "title": title,
+        "date": week_of,
+        "lastmod": today,
+        "tags": aggregate_ranked_item_tags(kept if kept else ranked),
+        "generator": "tocify-weekly",
+        "period": "weekly",
+        "topic": topic,
+        "week_of": week_of,
+        "included": len(kept),
+        "scored": len(ranked),
+        "triage_backend": triage_backend,
+        "triage_model": triage_model,
+    }
+    return with_frontmatter(body, frontmatter)
 
 
 def append_briefs_articles(
@@ -500,6 +597,7 @@ def run_weekly(
             today.isocalendar()[0], today.isocalendar()[1], 1
         ).isoformat()
         end_date = None
+    triage_metadata = tocify.get_triage_runtime_metadata()
 
     items = tocify.fetch_rss_items(feeds, end_date=end_date)
     print(f"Fetched {len(items)} RSS items (pre-filter) [topic={topic}]")
@@ -509,10 +607,25 @@ def run_weekly(
     brief_path = paths.briefs_dir / brief_filename
 
     if not items:
-        brief_path.write_text(
-            f"# {topic.upper()} Weekly Brief (week of {week_of})\n\n_No RSS items found in the last {LOOKBACK_DAYS} days._\n",
-            encoding="utf-8",
+        no_items_body = (
+            f"# {topic.upper()} Weekly Brief (week of {week_of})\n\n"
+            f"_No RSS items found in the last {LOOKBACK_DAYS} days._\n"
         )
+        no_items_frontmatter = {
+            "title": f"{topic.upper()} Weekly Brief (week of {week_of})",
+            "date": week_of,
+            "lastmod": datetime.now(timezone.utc).date().isoformat(),
+            "tags": [],
+            "generator": "tocify-weekly",
+            "period": "weekly",
+            "topic": topic,
+            "week_of": week_of,
+            "included": 0,
+            "scored": 0,
+            "triage_backend": triage_metadata["triage_backend"],
+            "triage_model": triage_metadata["triage_model"],
+        }
+        brief_path.write_text(with_frontmatter(no_items_body, no_items_frontmatter), encoding="utf-8")
         print(f"No items; wrote {brief_path}")
         return
 
@@ -570,9 +683,11 @@ def run_weekly(
     items_by_id = {it["id"]: it for it in items}
 
     os.environ["TOCIFY_PROMPT_PATH"] = str(paths.prompt_path)
-    triage_fn = tocify.get_triage_backend()
+    triage_fn, triage_metadata = tocify.get_triage_backend_with_metadata()
     result = tocify.triage_in_batches(interests, items, BATCH_SIZE, triage_fn)
     result["week_of"] = week_of
+    result["triage_backend"] = triage_metadata["triage_backend"]
+    result["triage_model"] = triage_metadata["triage_model"]
 
     ranked = result.get("ranked", [])
     kept = [r for r in ranked if r["score"] >= MIN_SCORE_READ][:MAX_RETURNED]

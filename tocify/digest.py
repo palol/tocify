@@ -4,6 +4,7 @@ from datetime import date, datetime, time as dt_time, timezone, timedelta
 import feedparser
 from dateutil import parser as dtparser
 from dotenv import load_dotenv
+from tocify.frontmatter import aggregate_ranked_item_tags, with_frontmatter
 
 load_dotenv()
 
@@ -183,8 +184,12 @@ def render_digest_md(result: dict, items_by_id: dict[str, dict]) -> str:
     notes = result.get("notes", "").strip()
     ranked = result.get("ranked", [])
     kept = [r for r in ranked if r["score"] >= MIN_SCORE_READ][:MAX_RETURNED]
+    today = datetime.now(timezone.utc).date().isoformat()
+    title = f"Weekly ToC Digest (week of {week_of})"
+    triage_backend = str(result.get("triage_backend") or "unknown")
+    triage_model = str(result.get("triage_model") or "unknown")
 
-    lines = [f"# Weekly ToC Digest (week of {week_of})", ""]
+    lines = [f"# {title}", ""]
     if notes:
         lines += [notes, ""]
     lines += [
@@ -215,7 +220,21 @@ def render_digest_md(result: dict, items_by_id: dict[str, dict]) -> str:
         if summary:
             lines += ["<details>", "<summary>RSS summary</summary>", "", summary, "", "</details>", ""]
         lines += ["---", ""]
-    return "\n".join(lines)
+    body = "\n".join(lines)
+    frontmatter = {
+        "title": title,
+        "date": week_of,
+        "lastmod": today,
+        "tags": aggregate_ranked_item_tags(kept if kept else ranked),
+        "generator": "tocify-digest",
+        "period": "weekly",
+        "week_of": week_of,
+        "included": len(kept),
+        "scored": len(ranked),
+        "triage_backend": triage_backend,
+        "triage_model": triage_model,
+    }
+    return with_frontmatter(body, frontmatter)
 
 
 def main():
@@ -223,11 +242,35 @@ def main():
     feeds = load_feeds("feeds.txt")
     items = fetch_rss_items(feeds)
     print(f"Fetched {len(items)} RSS items (pre-filter)")
+    triage_metadata = {"triage_backend": "unknown", "triage_model": "unknown"}
+    try:
+        from tocify.integrations import get_triage_runtime_metadata
+
+        triage_metadata = get_triage_runtime_metadata()
+    except Exception:
+        pass
 
     today = datetime.now(timezone.utc).date().isoformat()
     if not items:
+        no_items_body = (
+            f"# Weekly ToC Digest (week of {today})\n\n"
+            f"_No RSS items found in the last {LOOKBACK_DAYS} days._\n"
+        )
+        no_items_frontmatter = {
+            "title": f"Weekly ToC Digest (week of {today})",
+            "date": today,
+            "lastmod": today,
+            "tags": [],
+            "generator": "tocify-digest",
+            "period": "weekly",
+            "week_of": today,
+            "included": 0,
+            "scored": 0,
+            "triage_backend": triage_metadata["triage_backend"],
+            "triage_model": triage_metadata["triage_model"],
+        }
         with open("digest.md", "w", encoding="utf-8") as f:
-            f.write(f"# Weekly ToC Digest (week of {today})\n\n_No RSS items found in the last {LOOKBACK_DAYS} days._\n")
+            f.write(with_frontmatter(no_items_body, no_items_frontmatter))
         print("No items; wrote digest.md")
         return
 
@@ -236,9 +279,11 @@ def main():
 
     items_by_id = {it["id"]: it for it in items}
 
-    from tocify.integrations import get_triage_backend
-    triage_fn = get_triage_backend()
+    from tocify.integrations import get_triage_backend_with_metadata
+    triage_fn, triage_metadata = get_triage_backend_with_metadata()
     result = triage_in_batches(interests, items, BATCH_SIZE, triage_fn)
+    result["triage_backend"] = triage_metadata["triage_backend"]
+    result["triage_model"] = triage_metadata["triage_model"]
     md = render_digest_md(result, items_by_id)
 
     with open("digest.md", "w", encoding="utf-8") as f:

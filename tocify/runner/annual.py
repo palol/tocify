@@ -1,10 +1,13 @@
 """Generate annual review from monthly roundups."""
 
 import argparse
+import datetime as dt
+from collections import Counter
 from pathlib import Path
 
 from tqdm import tqdm
 
+from tocify.frontmatter import aggregate_ai_tags, normalize_ai_tags, split_frontmatter_and_body, with_frontmatter
 from tocify.runner.vault import (
     get_topic_paths,
     load_monthly_roundups_for_year,
@@ -31,6 +34,80 @@ Format the review as follows:
 5. Optional: "## Suggested Titles" — 3–5 possible newsletter titles.
 
 Keep content comprehensive but polished. Use only information from the attached roundups."""
+
+
+def _string_list(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(v).strip() for v in value if str(v).strip()]
+
+
+def _collect_source_metadata(paths: list[Path]) -> dict:
+    tag_lists: list[list[str]] = []
+    backends: list[str] = []
+    models: list[str] = []
+
+    for path in paths:
+        if not path.exists():
+            continue
+        frontmatter, _ = split_frontmatter_and_body(path.read_text(encoding="utf-8"))
+        tags = normalize_ai_tags(_string_list(frontmatter.get("tags")))
+        if tags:
+            tag_lists.append(tags)
+        backend = str(frontmatter.get("triage_backend") or "").strip()
+        model = str(frontmatter.get("triage_model") or "").strip()
+        if backend:
+            backends.append(backend)
+        if model:
+            models.append(model)
+
+    metadata: dict = {
+        "tags": aggregate_ai_tags(tag_lists),
+        "triage_backend": "unknown",
+        "triage_model": "unknown",
+    }
+
+    if backends:
+        backend_counts = Counter(backends)
+        backend_names = sorted(backend_counts)
+        metadata["triage_backend"] = backend_names[0] if len(backend_names) == 1 else "mixed"
+        if len(backend_names) > 1:
+            metadata["triage_backends"] = backend_names
+
+    if models:
+        model_counts = Counter(models)
+        model_names = sorted(model_counts)
+        metadata["triage_model"] = model_names[0] if len(model_names) == 1 else "mixed"
+        if len(model_names) > 1:
+            metadata["triage_models"] = model_names
+
+    return metadata
+
+
+def _apply_annual_frontmatter(
+    output_path: Path,
+    *,
+    year: int,
+    topic: str,
+    source_roundups: list[Path],
+) -> None:
+    body = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+    source_meta = _collect_source_metadata(source_roundups)
+    frontmatter = {
+        "title": f"{topic.upper()} Annual Review — {year}",
+        "date": f"{year}-12-31",
+        "lastmod": dt.datetime.now(dt.timezone.utc).date().isoformat(),
+        "tags": source_meta["tags"],
+        "generator": "tocify-annual",
+        "period": "annual",
+        "topic": topic,
+        "year": year,
+        "triage_backend": source_meta["triage_backend"],
+        "triage_model": source_meta["triage_model"],
+        "triage_backends": source_meta.get("triage_backends"),
+        "triage_models": source_meta.get("triage_models"),
+    }
+    output_path.write_text(with_frontmatter(body, frontmatter), encoding="utf-8")
 
 
 def main(
@@ -83,6 +160,13 @@ def main(
             encoding="utf-8",
         )
         log_path.write_text(f"Annual review generation failed: {e}", encoding="utf-8")
+
+    _apply_annual_frontmatter(
+        output_path,
+        year=year,
+        topic=topic,
+        source_roundups=roundup_paths,
+    )
 
     print(f"[DONE] Wrote annual review to {output_path} and log to {log_path}")
 

@@ -2,10 +2,12 @@
 
 import argparse
 import datetime as dt
+from collections import Counter
 from pathlib import Path
 
 from tqdm import tqdm
 
+from tocify.frontmatter import aggregate_ai_tags, normalize_ai_tags, split_frontmatter_and_body, with_frontmatter
 from tocify.runner.vault import (
     get_topic_paths,
     load_briefs_for_date_range,
@@ -38,6 +40,83 @@ Format the roundup as follows:
 Keep content comprehensive but polished."""
 
 
+def _string_list(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(v).strip() for v in value if str(v).strip()]
+
+
+def _collect_source_metadata(paths: list[Path]) -> dict:
+    tag_lists: list[list[str]] = []
+    backends: list[str] = []
+    models: list[str] = []
+
+    for path in paths:
+        if not path.exists():
+            continue
+        frontmatter, _ = split_frontmatter_and_body(path.read_text(encoding="utf-8"))
+        tags = normalize_ai_tags(_string_list(frontmatter.get("tags")))
+        if tags:
+            tag_lists.append(tags)
+        backend = str(frontmatter.get("triage_backend") or "").strip()
+        model = str(frontmatter.get("triage_model") or "").strip()
+        if backend:
+            backends.append(backend)
+        if model:
+            models.append(model)
+
+    tags = aggregate_ai_tags(tag_lists)
+    metadata: dict = {
+        "tags": tags,
+        "triage_backend": "unknown",
+        "triage_model": "unknown",
+    }
+
+    if backends:
+        backend_counts = Counter(backends)
+        backend_names = sorted(backend_counts)
+        metadata["triage_backend"] = backend_names[0] if len(backend_names) == 1 else "mixed"
+        if len(backend_names) > 1:
+            metadata["triage_backends"] = backend_names
+
+    if models:
+        model_counts = Counter(models)
+        model_names = sorted(model_counts)
+        metadata["triage_model"] = model_names[0] if len(model_names) == 1 else "mixed"
+        if len(model_names) > 1:
+            metadata["triage_models"] = model_names
+
+    return metadata
+
+
+def _apply_monthly_frontmatter(
+    output_path: Path,
+    *,
+    topic: str,
+    month_name: str,
+    month_iso: str,
+    end_date: dt.date,
+    source_briefs: list[Path],
+) -> None:
+    body = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+    source_meta = _collect_source_metadata(source_briefs)
+    frontmatter = {
+        "title": f"{topic.upper()} Monthly Roundup — {month_name}",
+        "date": end_date.isoformat(),
+        "lastmod": dt.datetime.now(dt.timezone.utc).date().isoformat(),
+        "tags": source_meta["tags"],
+        "generator": "tocify-monthly",
+        "period": "monthly",
+        "topic": topic,
+        "month": month_iso,
+        "triage_backend": source_meta["triage_backend"],
+        "triage_model": source_meta["triage_model"],
+        "triage_backends": source_meta.get("triage_backends"),
+        "triage_models": source_meta.get("triage_models"),
+    }
+    output_path.write_text(with_frontmatter(body, frontmatter), encoding="utf-8")
+
+
 def main(
     topic: str = "bci",
     month: str | None = None,
@@ -63,6 +142,7 @@ def main(
     paths.briefs_dir.mkdir(parents=True, exist_ok=True)
     paths.logs_dir.mkdir(parents=True, exist_ok=True)
     month_name = end_date.strftime("%B %Y")
+    month_iso = end_date.strftime("%Y-%m")
     roundup_filename = paths.briefs_dir / f"{end_date.isoformat()}_{topic}_monthly-roundup.md"
     log_filename = paths.logs_dir / f"{end_date.isoformat()}_{topic}_monthly-roundup.log.md"
     fallback_content = f"# {topic.upper()} Monthly Roundup — {month_name}\n\n*No briefs found for this period.*\n"
@@ -70,35 +150,42 @@ def main(
     if not brief_paths:
         roundup_filename.write_text(fallback_content, encoding="utf-8")
         log_filename.write_text("No briefs to process.", encoding="utf-8")
-        print(f"[DONE] Wrote monthly roundup to {roundup_filename} and log to {log_filename}")
-        return
+    else:
+        brief_refs = "\n".join(f"@{p}" for p in brief_paths)
+        prompt = ROUNDUP_PROMPT_TEMPLATE.format(
+            start_date=start_date.isoformat(),
+            end_date=end_date.isoformat(),
+            month_name=month_name,
+            brief_refs=brief_refs,
+            roundup_file_path=str(roundup_filename),
+            topic_upper=topic.upper(),
+        )
 
-    brief_refs = "\n".join(f"@{p}" for p in brief_paths)
-    prompt = ROUNDUP_PROMPT_TEMPLATE.format(
-        start_date=start_date.isoformat(),
-        end_date=end_date.isoformat(),
+        no_content_fallback = f"# {topic.upper()} Monthly Roundup — {month_name}\n\n*No content produced.*\n"
+        try:
+            run_agent_and_save_output(
+                prompt,
+                roundup_filename,
+                log_filename,
+                no_content_fallback,
+                model=model,
+            )
+        except Exception as e:
+            tqdm.write(f"[ERROR] Roundup generation failed: {e}")
+            roundup_filename.write_text(
+                f"# {topic.upper()} Monthly Roundup — {month_name}\n\n*Generation failed: {e}*\n",
+                encoding="utf-8",
+            )
+            log_filename.write_text(f"Roundup generation failed: {e}", encoding="utf-8")
+
+    _apply_monthly_frontmatter(
+        roundup_filename,
+        topic=topic,
         month_name=month_name,
-        brief_refs=brief_refs,
-        roundup_file_path=str(roundup_filename),
-        topic_upper=topic.upper(),
+        month_iso=month_iso,
+        end_date=end_date,
+        source_briefs=brief_paths,
     )
-
-    no_content_fallback = f"# {topic.upper()} Monthly Roundup — {month_name}\n\n*No content produced.*\n"
-    try:
-        run_agent_and_save_output(
-            prompt,
-            roundup_filename,
-            log_filename,
-            no_content_fallback,
-            model=model,
-        )
-    except Exception as e:
-        tqdm.write(f"[ERROR] Roundup generation failed: {e}")
-        roundup_filename.write_text(
-            f"# {topic.upper()} Monthly Roundup — {month_name}\n\n*Generation failed: {e}*\n",
-            encoding="utf-8",
-        )
-        log_filename.write_text(f"Roundup generation failed: {e}", encoding="utf-8")
 
     print(f"[DONE] Wrote monthly roundup to {roundup_filename} and log to {log_filename}")
 

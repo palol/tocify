@@ -29,9 +29,16 @@ def _load_weekly_module():
 
     newspaper_mod.Article = DummyArticle
 
+    frontmatter_path = Path(__file__).resolve().parents[1] / "tocify" / "frontmatter.py"
+    fm_spec = importlib.util.spec_from_file_location("tocify.frontmatter", frontmatter_path)
+    frontmatter_mod = importlib.util.module_from_spec(fm_spec)
+    assert fm_spec and fm_spec.loader
+    fm_spec.loader.exec_module(frontmatter_mod)
+
     sys.modules.setdefault("tocify", tocify_mod)
     sys.modules.setdefault("tocify.runner", runner_mod)
     sys.modules["tocify.runner.vault"] = vault_mod
+    sys.modules["tocify.frontmatter"] = frontmatter_mod
     sys.modules.setdefault("dotenv", dotenv_mod)
     sys.modules.setdefault("newspaper", newspaper_mod)
 
@@ -45,6 +52,7 @@ def _load_weekly_module():
 
 WEEKLY = _load_weekly_module()
 _apply_topic_action = WEEKLY._apply_topic_action
+_split_frontmatter_and_body = sys.modules["tocify.frontmatter"].split_frontmatter_and_body
 
 
 def _read(path: Path) -> str:
@@ -166,6 +174,78 @@ class TopicGardenerFootnoteTests(unittest.TestCase):
                     },
                     "2026-02-20",
                 )
+
+    def test_create_writes_frontmatter_tags_and_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            _apply_topic_action(
+                tmp_path,
+                {
+                    "action": "create",
+                    "slug": "neurorights",
+                    "title": "Neurorights",
+                    "body_markdown": "Policy developments this week.",
+                    "sources": ["https://example.com/policy"],
+                    "links_to": ["ethics"],
+                    "tags": ["Neuro Rights", "Policy"],
+                },
+                "2026-02-20",
+                default_tags=["BCI", "Policy"],
+                topic="bci",
+                triage_backend="openai",
+                triage_model="gpt-4o",
+            )
+            content = _read(tmp_path / "neurorights.md")
+            frontmatter, _ = _split_frontmatter_and_body(content)
+            self.assertEqual(frontmatter.get("generator"), "tocify-gardener")
+            self.assertEqual(frontmatter.get("period"), "evergreen")
+            self.assertEqual(frontmatter.get("topic"), "bci")
+            self.assertEqual(frontmatter.get("triage_backend"), "openai")
+            self.assertEqual(frontmatter.get("triage_model"), "gpt-4o")
+            self.assertEqual(frontmatter.get("tags"), ["neuro-rights", "policy", "bci"])
+
+    def test_update_refreshes_frontmatter_and_merges_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            topic_file = tmp_path / "bci.md"
+            topic_file.write_text(
+                (
+                    "---\n"
+                    "title: \"BCI\"\n"
+                    "date: \"2026-01-01\"\n"
+                    "lastmod: \"2026-01-01\"\n"
+                    "tags:\n"
+                    "  - \"legacy\"\n"
+                    "sources:\n"
+                    "  - \"https://example.com/old\"\n"
+                    "---\n\n"
+                    "Base content."
+                ),
+                encoding="utf-8",
+            )
+            _apply_topic_action(
+                tmp_path,
+                {
+                    "action": "update",
+                    "slug": "bci",
+                    "summary_addendum": "New report details.",
+                    "append_sources": ["https://example.com/new"],
+                    "tags": ["Neuro"],
+                },
+                "2026-02-20",
+                default_tags=["BCI"],
+                topic="bci",
+                triage_backend="gemini",
+                triage_model="gemini-2.0-flash",
+            )
+            content = _read(topic_file)
+            frontmatter, _ = _split_frontmatter_and_body(content)
+            self.assertEqual(frontmatter.get("lastmod"), "2026-02-20")
+            self.assertEqual(frontmatter.get("triage_backend"), "gemini")
+            self.assertEqual(frontmatter.get("triage_model"), "gemini-2.0-flash")
+            self.assertIn("https://example.com/old", frontmatter.get("sources", []))
+            self.assertIn("https://example.com/new", frontmatter.get("sources", []))
+            self.assertEqual(frontmatter.get("tags"), ["legacy", "neuro", "bci"])
 
 
 if __name__ == "__main__":
