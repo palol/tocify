@@ -109,6 +109,7 @@ Set **`BCI_VAULT_ROOT`** to the vault root (directory containing `config/`, `age
 Topic gardener is **enabled by default** for runner weekly jobs; set **`TOPIC_GARDENER=0`** to opt out.
 Gardener writes topic updates as **fact bullet lists** (for both create and update text), with source footnotes.
 If backend is `cursor` and `agent` is not found, runner exits with an actionable error; set `TOCIFY_BACKEND=openai` or `gemini` to use API backends instead.
+Weekly brief generation now canonicalizes `## [Title](url)` heading links using per-brief metadata rows (exact title first, then unique normalized-title match). If no deterministic canonical match is available, the existing rendered link is kept. This applies to newly generated weekly briefs; monthly and annual outputs are unchanged in this cycle.
 
 **Commands**
 

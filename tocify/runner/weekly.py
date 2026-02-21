@@ -1,6 +1,7 @@
 """Weekly digest for one topic: fetch (tocify), prefilter, triage, topic redundancy, gardener, brief + CSV."""
 
 import csv
+import importlib.util
 import json
 import math
 import os
@@ -961,6 +962,50 @@ def render_brief_md(
     return with_frontmatter(body, frontmatter)
 
 
+def _load_weekly_link_resolver():
+    try:
+        from tocify.runner.link_resolution import resolve_weekly_heading_links
+
+        return resolve_weekly_heading_links
+    except Exception:
+        module_path = Path(__file__).resolve().with_name("link_resolution.py")
+        spec = importlib.util.spec_from_file_location("tocify_runner_link_resolution_runtime", module_path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"Failed to load link resolver module at {module_path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.resolve_weekly_heading_links
+
+
+def _build_weekly_link_metadata_rows(
+    brief_filename: str, kept: list[dict], items_by_id: dict[str, dict]
+) -> list[dict]:
+    rows: list[dict] = []
+    for ranked in kept:
+        item = items_by_id.get(ranked.get("id"), {})
+        title = str(ranked.get("title") or item.get("title") or "").strip()
+        if not title:
+            continue
+        canonical_url = str(item.get("link") or "").strip()
+        fallback_url = str(ranked.get("link") or "").strip()
+        url = canonical_url or fallback_url
+        if not url:
+            continue
+        rows.append(
+            {
+                "brief_filename": brief_filename,
+                "title": title,
+                "url": url,
+            }
+        )
+    return rows
+
+
+def _resolve_weekly_heading_links(md: str, brief_filename: str, rows: list[dict]) -> tuple[str, dict]:
+    resolver = _load_weekly_link_resolver()
+    return resolver(md, brief_filename, rows)
+
+
 def append_briefs_articles(
     csv_path: Path,
     topic: str,
@@ -1134,6 +1179,20 @@ def run_weekly(
     ranked = result.get("ranked", [])
     kept = [r for r in ranked if r["score"] >= MIN_SCORE_READ][:MAX_RETURNED]
     md = render_brief_md(result, items_by_id, kept, topic)
+    link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
+    try:
+        md, link_stats = _resolve_weekly_heading_links(md, brief_filename, link_rows)
+        print(
+            "Link resolver: "
+            f"exact={link_stats['exact_matches']}, "
+            f"normalized={link_stats['normalized_matches']}, "
+            f"ambiguous={link_stats['ambiguous']}, "
+            f"missing={link_stats['missing']}, "
+            f"invalid_url={link_stats['invalid_url']}, "
+            f"unchanged={link_stats['unchanged']}"
+        )
+    except Exception as e:
+        print(f"[WARN] Link resolver failed; keeping rendered links unchanged: {e}")
     brief_path.write_text(md, encoding="utf-8")
     print(f"Wrote {brief_path}")
 
