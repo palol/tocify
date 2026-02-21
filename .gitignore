@@ -210,7 +210,3 @@ __marimo__/
 # uv
 uv.lock
 
-# actual newsletter
-contents/
-config/
-
