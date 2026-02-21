@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from tocify.integrations import resolve_backend_name
+
 VAULT_ROOT = Path(os.environ.get("BCI_VAULT_ROOT", ".")).resolve()
 CONFIG_DIR = VAULT_ROOT / "config"
 CONTENT_DIR = VAULT_ROOT / "content"
@@ -63,7 +65,7 @@ def get_topic_paths(topic: str, vault_root: Path | None = None) -> TopicPaths:
         interests_path=config / f"interests.{topic}.md",
         briefs_dir=content / "briefs",
         logs_dir=content / "logs",
-        briefs_articles_csv=config / "briefs_articles.csv",
+        briefs_articles_csv=content / "briefs_articles.csv",
         prompt_path=config / "triage_prompt.txt",
     )
 
@@ -193,19 +195,6 @@ def _expand_prompt_references(prompt: str) -> tuple[str, list[Path], int]:
         out_lines.append(f"[END SOURCE: {path}]")
 
     return "\n".join(out_lines), resolved_paths, total_chars
-
-
-def _resolve_runner_backend_name() -> str:
-    backend = os.getenv("TOCIFY_BACKEND", "").strip().lower()
-    if not backend:
-        backend = "cursor" if os.getenv("CURSOR_API_KEY", "").strip() else "openai"
-    if backend not in _BACKEND_MODEL_DEFAULTS:
-        known = sorted(_BACKEND_MODEL_DEFAULTS)
-        raise RuntimeError(
-            f"Unknown TOCIFY_BACKEND={backend!r}. Known: {known}. "
-            "Set TOCIFY_BACKEND=openai|cursor|gemini or configure API keys."
-        )
-    return backend
 
 
 def _resolve_runner_model(backend: str, model: str | None) -> str:
@@ -462,7 +451,7 @@ def run_backend_prompt(
     raise_on_error: bool = True,
 ) -> PromptRunResult:
     """Run a prompt through the active backend and return result metadata."""
-    backend = _resolve_runner_backend_name()
+    backend = resolve_backend_name()
     selected_model = _resolve_runner_model(backend, model)
 
     if backend == "openai":

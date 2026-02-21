@@ -48,9 +48,14 @@ def _resolve_backend_name() -> str:
     if backend not in _BACKENDS:
         raise RuntimeError(
             f"Unknown TOCIFY_BACKEND={backend!r}. Known: {list(_BACKENDS)}. "
-            "Set OPENAI_API_KEY or CURSOR_API_KEY for default backend, or force TOCIFY_BACKEND=gemini."
+            "Set OPENAI_API_KEY, CURSOR_API_KEY, or GEMINI_API_KEY for default backend, or force TOCIFY_BACKEND=openai|cursor|gemini."
         )
     return backend
+
+
+def resolve_backend_name() -> str:
+    """Single source of truth for backend selection. Used by integrations and runner (vault)."""
+    return _resolve_backend_name()
 
 
 def get_triage_runtime_metadata() -> dict[str, str]:

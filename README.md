@@ -129,12 +129,12 @@ Weekly brief generation now canonicalizes `## [Title](url)` heading links using 
 - `config/feeds.<topic>.txt` — RSS feeds (Name | URL)
 - `config/interests.<topic>.md` — Keywords + Narrative
 - `config/triage_prompt.txt` — Shared triage prompt
-- `config/briefs_articles.csv` — Chosen articles (topic column)
+- `content/briefs_articles.csv` — Chosen articles (topic column)
 - `content/briefs/` — Weekly briefs and monthly/annual outputs
 - `content/logs/` — Logs
 - `content/topics/` — Optional digital garden for topic redundancy and gardener
 
 **Automation notes**
 
-- `.github/workflows/weekly-runner.yml` runs `tocify.runner` weekly when runner config files exist.
+- `.github/workflows/weekly-runner.yml` runs `tocify.runner` weekly when runner config files exist. The workflow supports **OpenAI** (secret `OPENAI_API_KEY`) or **Cursor CLI** (secret `CURSOR_API_KEY`); if both are set, OpenAI is used. For Cursor, the workflow installs the Cursor CLI in the runner environment.
 - Legacy digest workflows (`weekly-digest.yml`, `weekly-digest-cursor.yml`) run `digest.py` only; they do not invoke runner gardener.

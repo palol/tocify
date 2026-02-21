@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from tocify.integrations import resolve_backend_name
+
 
 def _load_vault_module():
     path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "vault.py"
@@ -22,13 +24,13 @@ VAULT = _load_vault_module()
 class RunnerBackendDispatchTests(unittest.TestCase):
     def test_backend_resolution_defaults_and_override(self) -> None:
         with patch.dict(os.environ, {"TOCIFY_BACKEND": "", "CURSOR_API_KEY": ""}, clear=False):
-            self.assertEqual(VAULT._resolve_runner_backend_name(), "openai")
+            self.assertEqual(resolve_backend_name(), "openai")
 
         with patch.dict(os.environ, {"TOCIFY_BACKEND": "", "CURSOR_API_KEY": "x"}, clear=False):
-            self.assertEqual(VAULT._resolve_runner_backend_name(), "cursor")
+            self.assertEqual(resolve_backend_name(), "cursor")
 
         with patch.dict(os.environ, {"TOCIFY_BACKEND": "gemini"}, clear=False):
-            self.assertEqual(VAULT._resolve_runner_backend_name(), "gemini")
+            self.assertEqual(resolve_backend_name(), "gemini")
 
     def test_cursor_backend_raises_actionable_error_when_agent_missing(self) -> None:
         with patch.dict(os.environ, {"TOCIFY_BACKEND": "cursor", "CURSOR_API_KEY": "x"}, clear=False):

@@ -15,7 +15,7 @@ def main(topic: str, vault_root: Path | None = None, confirm: bool = False) -> N
     if not confirm:
         print("⚠️  WARNING: This will delete all data for topic '{}'!".format(topic), file=sys.stderr)
         print("   - Briefs and logs matching *_{}_*".format(topic), file=sys.stderr)
-        print("   - Rows for {} in config/briefs_articles.csv".format(topic), file=sys.stderr)
+        print("   - Rows for {} in content/briefs_articles.csv".format(topic), file=sys.stderr)
         print("", file=sys.stderr)
         print('Type "yes" to confirm: ', end="", file=sys.stderr)
         try:
@@ -47,7 +47,7 @@ def main(topic: str, vault_root: Path | None = None, confirm: bool = False) -> N
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(rows)
-        print(f"Filtered config/briefs_articles.csv to remove topic {topic}")
+        print(f"Filtered content/briefs_articles.csv to remove topic {topic}")
 
 
 def cli() -> None:

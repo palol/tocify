@@ -19,7 +19,7 @@ def _load_weekly_module():
             prompt_path=root / "config" / "triage_prompt.txt",
             briefs_dir=root / "content" / "briefs",
             logs_dir=root / "content" / "logs",
-            briefs_articles_csv=root / "config" / "briefs_articles.csv",
+            briefs_articles_csv=root / "content" / "briefs_articles.csv",
         )
 
     vault_mod.get_topic_paths = get_topic_paths

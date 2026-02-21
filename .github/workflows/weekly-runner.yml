@@ -35,7 +35,7 @@ jobs:
           activate-environment: true
 
       - name: Install deps
-        run: uv pip install -r requirements.txt
+        run: uv sync
 
       - name: Preflight runner config
         id: preflight
@@ -54,7 +54,14 @@ jobs:
             echo "Expected: $feeds, $interests, $prompt"
           fi
 
-      - name: Run runner weekly (gardener default-on)
+      - name: Install Cursor CLI (for Cursor backend)
+        if: steps.preflight.outputs.enabled == 'true' && secrets.CURSOR_API_KEY != '' && secrets.OPENAI_API_KEY == ''
+        run: |
+          curl https://cursor.com/install -fsS | bash
+          echo "$HOME/.cursor/bin" >> $GITHUB_PATH
+
+      - name: Run runner weekly with OpenAI (gardener default-on)
+        id: run_openai
         if: steps.preflight.outputs.enabled == 'true' && secrets.OPENAI_API_KEY != ''
         env:
           TOCIFY_BACKEND: "openai"
@@ -70,11 +77,25 @@ jobs:
           BATCH_SIZE: "50"
         run: uv run python -m tocify.runner.cli --vault . weekly --topic "$RUNNER_TOPIC"
 
+      - name: Run runner weekly with Cursor CLI
+        id: run_cursor
+        if: steps.preflight.outputs.enabled == 'true' && secrets.CURSOR_API_KEY != '' && secrets.OPENAI_API_KEY == ''
+        env:
+          TOCIFY_BACKEND: "cursor"
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          PATH: ${{ env.HOME }}/.cursor/bin:${{ env.PATH }}
+          MIN_SCORE_READ: "0.35"
+          LOOKBACK_DAYS: "7"
+          SUMMARY_MAX_CHARS: "500"
+          PREFILTER_KEEP_TOP: "200"
+          BATCH_SIZE: "50"
+        run: uv run python -m tocify.runner.cli --vault . weekly --topic "$RUNNER_TOPIC"
+
       - name: Commit runner outputs
-        if: steps.preflight.outputs.enabled == 'true' && secrets.OPENAI_API_KEY != ''
+        if: steps.preflight.outputs.enabled == 'true' && (secrets.OPENAI_API_KEY != '' || secrets.CURSOR_API_KEY != '')
         run: |
           git config user.name "toc-digest-bot"
           git config user.email "toc-digest-bot@users.noreply.github.com"
-          git add -A agent/briefs config/briefs_articles.csv topics 2>/dev/null || true
+          git add -A agent/briefs content/briefs_articles.csv topics 2>/dev/null || true
           git commit -m "Update weekly runner outputs" || exit 0
           git push

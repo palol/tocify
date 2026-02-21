@@ -8,6 +8,9 @@ import time
 from tocify.integrations._shared import build_triage_prompt, parse_structured_response
 
 SUMMARY_MAX_CHARS = int(os.getenv("SUMMARY_MAX_CHARS", "500"))
+# Subprocess timeout (seconds); large batches may need more. 0 = no timeout.
+CURSOR_TIMEOUT = int(os.getenv("TOCIFY_CURSOR_TIMEOUT", "600"))
+CURSOR_RETRIES = max(1, int(os.getenv("TOCIFY_CURSOR_RETRIES", "2")))
 
 # Must match SCHEMA in _shared (Cursor has no structured-output API)
 CURSOR_PROMPT_SUFFIX = """
@@ -29,10 +32,15 @@ def call_cursor_triage(interests: dict, items: list[dict], prompt_path: str | No
     prompt = prompt + CURSOR_PROMPT_SUFFIX
     args = ["agent", "-p", "--output-format", "text", "--trust", prompt]
     last = None
-    for attempt in range(2):
+    timeout = CURSOR_TIMEOUT if CURSOR_TIMEOUT > 0 else None
+    for attempt in range(CURSOR_RETRIES):
         try:
             result = subprocess.run(
-                args, capture_output=True, text=True, env=os.environ
+                args,
+                capture_output=True,
+                text=True,
+                env=os.environ,
+                timeout=timeout,
             )
             if result.returncode != 0:
                 raise RuntimeError(
@@ -44,7 +52,7 @@ def call_cursor_triage(interests: dict, items: list[dict], prompt_path: str | No
             if start < 0 or end <= start:
                 raise ValueError("No JSON object found in Cursor output")
             return parse_structured_response(response_text[start:end])
-        except (ValueError, json.JSONDecodeError, RuntimeError) as e:
+        except (ValueError, json.JSONDecodeError, RuntimeError, subprocess.TimeoutExpired) as e:
             last = e
             if attempt == 0:
                 time.sleep(3)
