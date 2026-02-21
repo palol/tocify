@@ -229,7 +229,9 @@ Below are (1) this week's weekly brief, and (2) existing topic files. Propose **
 
 Rules:
 - **create**: New topic when the brief introduces a distinct theme. Use lowercase-hyphen slug. Include title, body_markdown, sources, links_to, tags.
+  - `body_markdown` must be a **fact bullet list** (`- Fact...`), not prose paragraphs.
 - **update**: When an item adds to an existing topic. Provide slug, append_sources, optionally summary_addendum and tags.
+  - `summary_addendum` must be a **fact bullet list** (`- Fact...`) when present.
 - Every markdown text addition must include source attribution using markdown footnotes with URL definitions, e.g. [^1] and [^1]: https://example.com.
 
 This week's brief (category: {topic}):
@@ -240,6 +242,9 @@ Existing topic files (slug and preview):
 
 Return **only** a single JSON object. Schema:
 {{"topic_actions": [{{ "action": "create" | "update", "slug": "<slug>", "title": "<title>", "body_markdown": "<markdown>", "sources": ["url"], "links_to": ["slug"], "append_sources": ["url"], "summary_addendum": "<markdown>", "tags": ["tag"] }}]}}
+Bullet examples for markdown fields:
+- body_markdown: "- Fact one.\\n- Fact two."
+- summary_addendum: "- New finding one.\\n- New finding two."
 Omit topic_actions or use [] if nothing to do."""
 
 
@@ -306,6 +311,44 @@ def _with_source_footnotes(markdown: str, source_urls: list[str]) -> str:
     if body:
         return f"{body} {markers}\n\n{defs}"
     return f"{markers}\n\n{defs}"
+
+
+BULLET_LINE_RE = re.compile(r"^\s*[-*+]\s+")
+NUMBERED_LINE_RE = re.compile(r"^\s*\d+[.)]\s+")
+
+
+def _normalize_to_fact_bullets(markdown: str) -> str:
+    text = (markdown or "").strip()
+    if not text:
+        return ""
+
+    facts: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        if BULLET_LINE_RE.match(line):
+            fact = BULLET_LINE_RE.sub("", line, count=1).strip()
+            if fact:
+                facts.append(fact)
+            continue
+
+        if NUMBERED_LINE_RE.match(line):
+            fact = NUMBERED_LINE_RE.sub("", line, count=1).strip()
+            if fact:
+                facts.append(fact)
+            continue
+
+        line = re.sub(r"^#{1,6}\s+", "", line).strip()
+        segments = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9\[])", line)
+        for seg in segments:
+            fact = seg.strip()
+            if fact:
+                facts.append(fact)
+
+    deduped = _merge_unique(facts)
+    return "\n".join(f"- {f}" for f in deduped)
 
 
 def _list_existing_topic_previews(topics_dir: Path, max_preview_chars: int = 400) -> list[dict]:
@@ -377,7 +420,7 @@ def _apply_topic_action(
 
     if act == "create":
         title = (action.get("title") or slug).strip()
-        body_markdown = (action.get("body_markdown") or "").strip()
+        body_markdown = _normalize_to_fact_bullets((action.get("body_markdown") or "").strip())
         sources = action.get("sources") if isinstance(action.get("sources"), list) else []
         sources = [str(s).strip() for s in sources if str(s).strip()]
         sources = _dedupe_urls(sources + _extract_urls_from_markdown(body_markdown))
@@ -413,7 +456,7 @@ def _apply_topic_action(
         else:
             append_sources = []
         append_sources = _dedupe_urls(append_sources)
-        summary_addendum = (action.get("summary_addendum") or "").strip()
+        summary_addendum = _normalize_to_fact_bullets((action.get("summary_addendum") or "").strip())
         action_tags = normalize_ai_tags(_string_list(action.get("tags")))
         existing_tags = normalize_ai_tags(_string_list(existing_frontmatter.get("tags")))
         merged_tags = normalize_ai_tags(_merge_unique(existing_tags + action_tags + default_tags))
@@ -425,7 +468,7 @@ def _apply_topic_action(
             summary_with_footnotes = _with_source_footnotes(summary_addendum, sources_for_summary)
             to_append.append(f"\n\n## Recent update ({today})\n\n{summary_with_footnotes}")
         elif append_sources:
-            source_note = _with_source_footnotes("Source refresh.", append_sources)
+            source_note = _with_source_footnotes(_normalize_to_fact_bullets("Source refresh."), append_sources)
             to_append.append(f"\n\n## Recent update ({today})\n\n{source_note}")
         if append_sources:
             to_append.append("\n\n### New sources\n\n" + "\n".join(f"- {u}" for u in append_sources))

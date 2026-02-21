@@ -60,6 +60,69 @@ def _read(path: Path) -> str:
 
 
 class TopicGardenerFootnoteTests(unittest.TestCase):
+    def test_create_normalizes_paragraphs_to_fact_bullets(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            _apply_topic_action(
+                tmp_path,
+                {
+                    "action": "create",
+                    "slug": "signals",
+                    "title": "Signals",
+                    "body_markdown": (
+                        "A new EEG benchmark was released at https://example.com/eeg. "
+                        "Replication score improved in follow-up analysis."
+                    ),
+                    "sources": [],
+                    "links_to": [],
+                },
+                "2026-02-20",
+            )
+            content = _read(tmp_path / "signals.md")
+            self.assertIn("- A new EEG benchmark was released at https://example.com/eeg.", content)
+            self.assertIn("- Replication score improved in follow-up analysis.", content)
+
+    def test_update_normalizes_paragraphs_to_fact_bullets(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            topic_file = tmp_path / "bci.md"
+            topic_file.write_text("---\ntitle: \"BCI\"\n---\n\nBase content.", encoding="utf-8")
+            _apply_topic_action(
+                tmp_path,
+                {
+                    "action": "update",
+                    "slug": "bci",
+                    "summary_addendum": (
+                        "A decoding challenge posted new data at https://example.com/challenge. "
+                        "A second lab reported reproducibility gains."
+                    ),
+                    "append_sources": [],
+                },
+                "2026-02-20",
+            )
+            content = _read(topic_file)
+            self.assertIn("- A decoding challenge posted new data at https://example.com/challenge.", content)
+            self.assertIn("- A second lab reported reproducibility gains.", content)
+
+    def test_create_preserves_existing_bulleted_input(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            _apply_topic_action(
+                tmp_path,
+                {
+                    "action": "create",
+                    "slug": "policy",
+                    "title": "Policy",
+                    "body_markdown": "- First fact.\n- Second fact at https://example.com/policy.",
+                    "sources": [],
+                    "links_to": [],
+                },
+                "2026-02-20",
+            )
+            content = _read(tmp_path / "policy.md")
+            self.assertIn("- First fact.", content)
+            self.assertIn("- Second fact at https://example.com/policy.", content)
+
     def test_create_adds_footnotes_from_sources(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             tmp_path = Path(td)

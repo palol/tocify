@@ -105,6 +105,7 @@ For multiple topics and a shared vault layout, use the **`tocify-runner`** CLI (
 
 Set **`BCI_VAULT_ROOT`** to the vault root (directory containing `config/`, `agent/`). Default is current directory.
 Topic gardener is **enabled by default** for runner weekly jobs; set **`TOPIC_GARDENER=0`** to opt out.
+Gardener writes topic updates as **fact bullet lists** (for both create and update text), with source footnotes.
 
 **Commands**
 
