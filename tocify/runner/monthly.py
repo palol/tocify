@@ -152,4 +152,8 @@ def main(
         source_briefs=brief_paths,
     )
 
+    from tocify.markdown_lint import lint_file
+
+    lint_file(roundup_filename)
+
     print(f"[DONE] Wrote monthly roundup to {roundup_filename} and log to {log_filename}")

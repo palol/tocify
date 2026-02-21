@@ -55,7 +55,7 @@ class RunnerBackendDispatchTests(unittest.TestCase):
                 with patch.object(VAULT.subprocess, "run", return_value=completed):
                     VAULT.run_agent_and_save_output("prompt", output, log, "fallback")
 
-            self.assertEqual(output.read_text(encoding="utf-8"), "fallback")
+            self.assertEqual(output.read_text(encoding="utf-8"), "fallback\n")
             log_text = log.read_text(encoding="utf-8")
             self.assertIn("backend=cursor", log_text)
             self.assertIn("returncode=2", log_text)
@@ -74,7 +74,7 @@ class RunnerBackendDispatchTests(unittest.TestCase):
                 with patch.object(VAULT.subprocess, "run", side_effect=_run_and_write):
                     VAULT.run_agent_and_save_output("prompt", output, log, "fallback")
 
-            self.assertEqual(output.read_text(encoding="utf-8"), "agent wrote file content")
+            self.assertEqual(output.read_text(encoding="utf-8"), "agent wrote file content\n")
             log_text = log.read_text(encoding="utf-8")
             self.assertIn("used_fallback=False", log_text)
             self.assertIn("preserved_agent_file=True", log_text)
@@ -90,7 +90,7 @@ class RunnerBackendDispatchTests(unittest.TestCase):
                 with patch.object(VAULT.subprocess, "run", return_value=completed):
                     VAULT.run_agent_and_save_output("prompt", output, log, "fallback")
 
-            self.assertEqual(output.read_text(encoding="utf-8"), "fallback")
+            self.assertEqual(output.read_text(encoding="utf-8"), "fallback\n")
             log_text = log.read_text(encoding="utf-8")
             self.assertIn("used_fallback=True", log_text)
             self.assertIn("preserved_agent_file=False", log_text)

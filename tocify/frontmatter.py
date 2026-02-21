@@ -13,6 +13,7 @@ _FRONTMATTER_KEY_ORDER = [
     "title",
     "date",
     "lastmod",
+    "updated",
     "tags",
     "generator",
     "period",

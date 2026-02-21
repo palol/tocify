@@ -591,6 +591,10 @@ def run_agent_and_save_output(
         final_output = response_text
         output_path.write_text(final_output, encoding="utf-8")
 
+    from tocify.markdown_lint import lint_file
+
+    lint_file(output_path)
+
     log_path.write_text(
         _build_prompt_log(result, final_output, used_fallback, preserved_agent_file),
         encoding="utf-8",

@@ -134,4 +134,8 @@ def main(
         source_roundups=roundup_paths,
     )
 
+    from tocify.markdown_lint import lint_file
+
+    lint_file(output_path)
+
     print(f"[DONE] Wrote annual review to {output_path} and log to {log_path}")
