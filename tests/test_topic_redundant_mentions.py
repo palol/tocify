@@ -18,7 +18,7 @@ def _load_weekly_module():
             feeds_path=root / "config" / f"feeds.{topic}.txt",
             interests_path=root / "config" / f"interests.{topic}.md",
             prompt_path=root / "config" / "triage_prompt.txt",
-            briefs_dir=root / "agent" / "briefs",
+            briefs_dir=root / "content" / "briefs",
             briefs_articles_csv=root / "config" / "briefs_articles.csv",
         )
 
@@ -272,7 +272,7 @@ class TopicRedundantMentionsTests(unittest.TestCase):
     def test_call_topic_redundancy_prompt_excludes_frontmatter_and_footnote_definitions(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            topic_path = root / "topics" / "bci.md"
+            topic_path = root / "content" / "topics" / "bci.md"
             topic_path.parent.mkdir(parents=True, exist_ok=True)
             topic_path.write_text(
                 (
@@ -333,7 +333,7 @@ class TopicRedundantMentionsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             _write_runner_inputs(root)
-            topics_dir = root / "topics"
+            topics_dir = root / "content" / "topics"
             topics_dir.mkdir(parents=True, exist_ok=True)
             (topics_dir / "bci.md").write_text("---\ntitle: \"BCI\"\n---\n\n- Existing fact.\n", encoding="utf-8")
             weekly.load_recent_topic_files = lambda *_args, **_kwargs: [topics_dir / "bci.md"]
@@ -370,7 +370,7 @@ class TopicRedundantMentionsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             _write_runner_inputs(root)
-            topics_dir = root / "topics"
+            topics_dir = root / "content" / "topics"
             topics_dir.mkdir(parents=True, exist_ok=True)
             (topics_dir / "bci.md").write_text("---\ntitle: \"BCI\"\n---\n\n- Existing fact.\n", encoding="utf-8")
             weekly.load_recent_topic_files = lambda *_args, **_kwargs: [topics_dir / "bci.md"]

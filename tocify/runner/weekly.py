@@ -1262,7 +1262,7 @@ def run_weekly(
     if before_cross > len(items):
         print(f"Cross-week filter: dropped {before_cross - len(items)} items, {len(items)} remaining")
 
-    topics_dir = root / "topics"
+    topics_dir = root / "content" / "topics"
     allowed_source_url_index = _build_allowed_source_url_index(items)
     redundant_mentions: list[dict] = []
     if TOPIC_REDUNDANCY_ENABLED and items:

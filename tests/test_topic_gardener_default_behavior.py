@@ -19,7 +19,7 @@ def _load_weekly_module():
             feeds_path=root / "config" / f"feeds.{topic}.txt",
             interests_path=root / "config" / f"interests.{topic}.md",
             prompt_path=root / "config" / "triage_prompt.txt",
-            briefs_dir=root / "agent" / "briefs",
+            briefs_dir=root / "content" / "briefs",
             briefs_articles_csv=root / "config" / "briefs_articles.csv",
         )
 

@@ -105,7 +105,7 @@ This applies to newly generated outputs (`digest.md`, weekly briefs, monthly rou
 For multiple topics and a shared vault layout, use the **`tocify-runner`** CLI (same package). It uses tocify for RSS fetch, prefilter, triage, and render; adds per-topic feeds/interests, topic redundancy vs a digital garden, topic gardener, and `briefs_articles.csv`.
 Runner AI steps (weekly triage, topic redundancy, topic gardener, monthly, annual) follow the selected backend.
 
-Set **`BCI_VAULT_ROOT`** to the vault root (directory containing `config/`, `agent/`). Default is current directory.
+Set **`BCI_VAULT_ROOT`** to the vault root (directory containing `config/`, `content/`). Default is current directory.
 Topic gardener is **enabled by default** for runner weekly jobs; set **`TOPIC_GARDENER=0`** to opt out.
 Gardener writes topic updates as **fact bullet lists** under a persistent `## Gardner updates` section. Each new bullet gets one source footnote, and redundant articles do not trigger topic-page citation updates.
 If backend is `cursor` and `agent` is not found, runner exits with an actionable error; set `TOCIFY_BACKEND=openai` or `gemini` to use API backends instead.
@@ -127,9 +127,9 @@ Weekly brief generation now canonicalizes `## [Title](url)` heading links using 
 - `config/interests.<topic>.md` — Keywords + Narrative
 - `config/triage_prompt.txt` — Shared triage prompt
 - `config/briefs_articles.csv` — Chosen articles (topic column)
-- `agent/briefs/` — Weekly briefs and monthly/annual outputs
-- `agent/logs/` — Logs
-- `topics/` — Optional digital garden for topic redundancy and gardener
+- `content/briefs/` — Weekly briefs and monthly/annual outputs
+- `content/logs/` — Logs
+- `content/topics/` — Optional digital garden for topic redundancy and gardener
 
 **Automation notes**
 

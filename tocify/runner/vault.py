@@ -12,10 +12,10 @@ from typing import Any
 
 VAULT_ROOT = Path(os.environ.get("BCI_VAULT_ROOT", ".")).resolve()
 CONFIG_DIR = VAULT_ROOT / "config"
-AGENT_DIR = VAULT_ROOT / "agent"
-BRIEFS_DIR = AGENT_DIR / "briefs"
-LOGS_DIR = AGENT_DIR / "logs"
-TOPICS_DIR = VAULT_ROOT / "topics"
+CONTENT_DIR = VAULT_ROOT / "content"
+BRIEFS_DIR = CONTENT_DIR / "briefs"
+LOGS_DIR = CONTENT_DIR / "logs"
+TOPICS_DIR = CONTENT_DIR / "topics"
 
 _BACKEND_MODEL_DEFAULTS: dict[str, tuple[str, str]] = {
     "openai": ("OPENAI_MODEL", "gpt-4o"),
@@ -57,12 +57,12 @@ def get_topic_paths(topic: str, vault_root: Path | None = None) -> TopicPaths:
     """Return paths for the given topic. Same briefs_dir, logs_dir, csv for all topics."""
     root = vault_root or VAULT_ROOT
     config = root / "config"
-    agent = root / "agent"
+    content = root / "content"
     return TopicPaths(
         feeds_path=config / f"feeds.{topic}.txt",
         interests_path=config / f"interests.{topic}.md",
-        briefs_dir=agent / "briefs",
-        logs_dir=agent / "logs",
+        briefs_dir=content / "briefs",
+        logs_dir=content / "logs",
         briefs_articles_csv=config / "briefs_articles.csv",
         prompt_path=config / "triage_prompt.txt",
     )
@@ -89,7 +89,7 @@ def load_briefs_for_date_range(
 ) -> list[Path]:
     """Load weekly briefs for the topic that fall within the date range."""
     root = vault_root or VAULT_ROOT
-    briefs_dir = root / "agent" / "briefs"
+    briefs_dir = root / "content" / "briefs"
     briefs = []
     if not briefs_dir.exists():
         return briefs
@@ -114,7 +114,7 @@ def load_monthly_roundups_for_year(
 ) -> list[Path]:
     """Load monthly roundups for the topic and year, sorted chronologically."""
     root = vault_root or VAULT_ROOT
-    briefs_dir = root / "agent" / "briefs"
+    briefs_dir = root / "content" / "briefs"
     roundups: list[tuple[dt.date, Path]] = []
     if not briefs_dir.exists():
         return []
