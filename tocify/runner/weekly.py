@@ -1022,8 +1022,6 @@ def _apply_topic_action(
         frontmatter["links_to"] = links_to
         path.write_text(with_frontmatter(updated_body, frontmatter), encoding="utf-8")
 
-
-<<<<<<< HEAD
 def run_topic_gardener(
     topics_dir: Path,
     brief_path: Path,
