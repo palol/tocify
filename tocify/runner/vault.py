@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from tocify.integrations import resolve_backend_name
+from tocify.integrations import get_triage_runtime_metadata, resolve_backend_name
 from tocify.integrations._shared import extract_first_json_object
 
 VAULT_ROOT = Path(os.environ.get("BCI_VAULT_ROOT", ".")).resolve()
@@ -19,13 +19,6 @@ CONTENT_DIR = VAULT_ROOT / "content"
 BRIEFS_DIR = CONTENT_DIR / "briefs"
 LOGS_DIR = CONTENT_DIR / "logs"
 TOPICS_DIR = CONTENT_DIR / "topics"
-
-_BACKEND_MODEL_DEFAULTS: dict[str, tuple[str, str]] = {
-    "openai": ("OPENAI_MODEL", "gpt-4o"),
-    "gemini": ("GEMINI_MODEL", "gemini-2.0-flash"),
-    "cursor": ("CURSOR_MODEL", "unknown"),
-}
-
 
 @dataclass(frozen=True)
 class TopicPaths:
@@ -199,13 +192,9 @@ def _expand_prompt_references(prompt: str) -> tuple[str, list[Path], int]:
 
 
 def _resolve_runner_model(backend: str, model: str | None) -> str:
-    model_env, default_model = _BACKEND_MODEL_DEFAULTS[backend]
     if model and model.strip():
         return model.strip()
-    env_model = os.getenv(model_env, "").strip()
-    if env_model:
-        return env_model
-    return default_model
+    return get_triage_runtime_metadata()["triage_model"]
 
 
 def _maybe_expand_prompt(

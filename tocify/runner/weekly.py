@@ -27,6 +27,7 @@ from tocify.frontmatter import (
     with_frontmatter,
 )
 from tocify.runner.link_hygiene import (
+    _dedupe_urls,
     build_allowed_url_index,
     extract_urls_from_markdown,
     is_valid_http_url,
@@ -34,6 +35,7 @@ from tocify.runner.link_hygiene import (
     sanitize_markdown_links,
 )
 from tocify.runner.vault import VAULT_ROOT, get_topic_paths, run_structured_prompt
+from tocify.runner._utils import string_list as _string_list
 
 load_dotenv()
 
@@ -77,10 +79,6 @@ def parse_week_spec(s: str) -> str:
     return d.isoformat()
 
 
-def normalize_url_for_dedup(url: str) -> str:
-    return normalize_url_for_match(url)
-
-
 def load_briefs_articles_urls(csv_path: Path, topic: str | None = None) -> set[str]:
     seen = set()
     if not csv_path.exists():
@@ -96,7 +94,7 @@ def load_briefs_articles_urls(csv_path: Path, topic: str | None = None) -> set[s
                 continue
             u = (row.get("url") or "").strip()
             if u:
-                seen.add(normalize_url_for_dedup(u))
+                seen.add(normalize_url_for_match(u))
     return seen
 
 
@@ -406,20 +404,6 @@ TOPIC_GARDENER_SCHEMA = {
 }
 
 
-def _dedupe_urls(urls: list[str]) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
-    for raw in urls:
-        u = str(raw).strip()
-        if not u:
-            continue
-        if u in seen:
-            continue
-        seen.add(u)
-        out.append(u)
-    return out
-
-
 def _build_allowed_source_url_index(items: list[dict]) -> dict[str, str]:
     """Map normalized URL -> canonical metadata URL from item links."""
     return build_allowed_url_index([str(item.get("link") or "").strip() for item in items])
@@ -432,7 +416,7 @@ def _filter_urls_to_allowed(urls: list[str], allowed_source_url_index: dict[str,
     out: list[str] = []
     seen_norm: set[str] = set()
     for raw in deduped:
-        norm = normalize_url_for_dedup(raw)
+        norm = normalize_url_for_match(raw)
         if not norm:
             continue
         canonical = allowed_source_url_index.get(norm)
@@ -452,7 +436,7 @@ def _resolve_allowed_source_url(
         candidate = str(raw or "").strip()
         if not candidate:
             continue
-        norm = normalize_url_for_dedup(candidate)
+        norm = normalize_url_for_match(candidate)
         if not norm:
             continue
         canonical = allowed_source_url_index.get(norm)
@@ -463,12 +447,6 @@ def _resolve_allowed_source_url(
 
 def _extract_urls_from_markdown(text: str) -> list[str]:
     return _dedupe_urls(extract_urls_from_markdown(text))
-
-
-def _string_list(value) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [str(v).strip() for v in value if str(v).strip()]
 
 
 def _merge_unique(values: list[str]) -> list[str]:
@@ -1261,7 +1239,7 @@ def run_weekly(
     deduped = []
     for it in items:
         link = (it.get("link") or "").strip()
-        norm = normalize_url_for_dedup(link)
+        norm = normalize_url_for_match(link)
         if norm and norm not in seen_norm:
             seen_norm[norm] = True
             deduped.append(it)
@@ -1271,7 +1249,7 @@ def run_weekly(
 
     briefs_urls = load_briefs_articles_urls(paths.briefs_articles_csv, topic=topic)
     before_cross = len(items)
-    items = [it for it in items if normalize_url_for_dedup((it.get("link") or "").strip()) not in briefs_urls]
+    items = [it for it in items if normalize_url_for_match((it.get("link") or "").strip()) not in briefs_urls]
     if before_cross > len(items):
         print(f"Cross-week filter: dropped {before_cross - len(items)} items, {len(items)} remaining")
 

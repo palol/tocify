@@ -2,7 +2,8 @@
 
 import re
 from collections import defaultdict
-from urllib.parse import urlparse
+
+from tocify.runner.link_hygiene import is_valid_http_url
 
 HEADING_LINK_RE = re.compile(
     r"^(?P<prefix>\s*##\s+\[)(?P<title>.+?)(?P<middle>\]\()(?P<url>[^)]+)(?P<suffix>\)\s*)$",
@@ -13,14 +14,6 @@ TITLE_WHITESPACE_RE = re.compile(r"\s+")
 
 def normalize_title_for_match(title: str) -> str:
     return TITLE_WHITESPACE_RE.sub(" ", str(title or "").strip()).lower()
-
-
-def is_valid_http_url(url: str) -> bool:
-    raw = str(url or "").strip()
-    if not raw:
-        return False
-    parsed = urlparse(raw)
-    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
 
 
 def build_brief_title_url_index(rows: list[dict], brief_filename: str) -> dict:

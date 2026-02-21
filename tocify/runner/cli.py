@@ -22,10 +22,6 @@ from tocify.runner.quartz_init import (
 )
 
 
-def _vault_root(args: argparse.Namespace) -> Path | None:
-    return getattr(args, "vault", None) or (Path(os.environ.get("BCI_VAULT_ROOT", ".")).resolve() if hasattr(args, "vault") else None)
-
-
 def cmd_weekly(args: argparse.Namespace) -> None:
     vault = getattr(args, "vault", None)
     run_weekly(

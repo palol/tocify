@@ -62,11 +62,25 @@ def _load_monthly_module(frontmatter_module):
     assert lh_spec and lh_spec.loader
     lh_spec.loader.exec_module(link_hygiene_mod)
 
+    _utils_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "_utils.py"
+    _utils_spec = importlib.util.spec_from_file_location("tocify.runner._utils", _utils_path)
+    _utils_mod = importlib.util.module_from_spec(_utils_spec)
+    assert _utils_spec and _utils_spec.loader
+    _utils_spec.loader.exec_module(_utils_mod)
+
+    roundup_common_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "roundup_common.py"
+    roundup_spec = importlib.util.spec_from_file_location("tocify.runner.roundup_common", roundup_common_path)
+    roundup_mod = importlib.util.module_from_spec(roundup_spec)
+    assert roundup_spec and roundup_spec.loader
+    roundup_spec.loader.exec_module(roundup_mod)
+
     sys.modules["tocify"] = tocify_mod
     sys.modules["tocify.runner"] = runner_mod
     sys.modules["tocify.runner.vault"] = vault_mod
     sys.modules["tocify.runner.weeks"] = weeks_mod
     sys.modules["tocify.runner.link_hygiene"] = link_hygiene_mod
+    sys.modules["tocify.runner._utils"] = _utils_mod
+    sys.modules["tocify.runner.roundup_common"] = roundup_mod
     sys.modules["tocify.frontmatter"] = frontmatter_module
     sys.modules["tqdm"] = tqdm_mod
 
@@ -94,10 +108,24 @@ def _load_annual_module(frontmatter_module):
     assert lh_spec and lh_spec.loader
     lh_spec.loader.exec_module(link_hygiene_mod)
 
+    _utils_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "_utils.py"
+    _utils_spec = importlib.util.spec_from_file_location("tocify.runner._utils", _utils_path)
+    _utils_mod = importlib.util.module_from_spec(_utils_spec)
+    assert _utils_spec and _utils_spec.loader
+    _utils_spec.loader.exec_module(_utils_mod)
+
+    roundup_common_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "roundup_common.py"
+    roundup_spec = importlib.util.spec_from_file_location("tocify.runner.roundup_common", roundup_common_path)
+    roundup_mod = importlib.util.module_from_spec(roundup_spec)
+    assert roundup_spec and roundup_spec.loader
+    roundup_spec.loader.exec_module(roundup_mod)
+
     sys.modules["tocify"] = tocify_mod
     sys.modules["tocify.runner"] = runner_mod
     sys.modules["tocify.runner.vault"] = vault_mod
     sys.modules["tocify.runner.link_hygiene"] = link_hygiene_mod
+    sys.modules["tocify.runner._utils"] = _utils_mod
+    sys.modules["tocify.runner.roundup_common"] = roundup_mod
     sys.modules["tocify.frontmatter"] = frontmatter_module
     sys.modules["tqdm"] = tqdm_mod
 
@@ -122,6 +150,7 @@ FRONTMATTER = _load_frontmatter_module()
 DIGEST = _load_digest_module(FRONTMATTER)
 MONTHLY = _load_monthly_module(FRONTMATTER)
 ANNUAL = _load_annual_module(FRONTMATTER)
+ROUNDUP_COMMON = sys.modules["tocify.runner.roundup_common"]
 INTEGRATIONS = _load_integrations_module()
 
 
@@ -197,7 +226,7 @@ tags:
 """,
                 encoding="utf-8",
             )
-            metadata = MONTHLY._collect_source_metadata([p1, p2])
+            metadata = ROUNDUP_COMMON.collect_source_metadata([p1, p2])
 
         self.assertEqual(metadata["triage_backend"], "mixed")
         self.assertEqual(metadata["triage_model"], "mixed")
@@ -250,8 +279,8 @@ title: \"Old\"
                 ),
                 encoding="utf-8",
             )
-            allowed = MONTHLY._build_allowed_url_index_from_sources([source])
-            stats = MONTHLY._sanitize_output_links(output, allowed)
+            allowed = ROUNDUP_COMMON.build_allowed_url_index_from_sources([source])
+            stats = ROUNDUP_COMMON.sanitize_output_links(output, allowed)
             sanitized = output.read_text(encoding="utf-8")
 
         self.assertIn("[Paper A](https://example.com/a)", sanitized)
@@ -274,8 +303,8 @@ title: \"Old\"
                 ),
                 encoding="utf-8",
             )
-            allowed = ANNUAL._build_allowed_url_index_from_sources([source])
-            stats = ANNUAL._sanitize_output_links(output, allowed)
+            allowed = ROUNDUP_COMMON.build_allowed_url_index_from_sources([source])
+            stats = ROUNDUP_COMMON.sanitize_output_links(output, allowed)
             sanitized = output.read_text(encoding="utf-8")
 
         self.assertIn("https://example.com/allowed", sanitized)

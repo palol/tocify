@@ -1,6 +1,5 @@
 """Remove all data for a topic: briefs/logs matching *_<topic>_*, and that topic's rows from briefs_articles.csv."""
 
-import argparse
 import csv
 import sys
 from pathlib import Path
@@ -48,12 +47,3 @@ def main(topic: str, vault_root: Path | None = None, confirm: bool = False) -> N
             writer.writeheader()
             writer.writerows(rows)
         print(f"Filtered content/briefs_articles.csv to remove topic {topic}")
-
-
-def cli() -> None:
-    parser = argparse.ArgumentParser(description="Clear all data for a topic")
-    parser.add_argument("topic", type=str)
-    parser.add_argument("--yes", action="store_true", help="Skip confirmation")
-    parser.add_argument("--vault", type=Path, default=None)
-    args = parser.parse_args()
-    main(args.topic, vault_root=args.vault, confirm=args.yes)
