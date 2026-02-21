@@ -1,0 +1,80 @@
+name: Weekly ToC Runner
+
+on:
+  schedule:
+    # Mondays 08:00 America/Los_Angeles ≈ 16:00 UTC
+    - cron: "00 16 * * 1"
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "Runner topic to process"
+        required: false
+        default: "bci"
+
+env:
+  RUNNER_TOPIC: ${{ github.event.inputs.topic || 'bci' }}
+
+permissions:
+  contents: write
+
+jobs:
+  runner:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Python version
+        run: echo "PYTHON_VERSION=$(cat .python-version)" >> $GITHUB_ENV
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          activate-environment: true
+
+      - name: Install deps
+        run: uv pip install -r requirements.txt
+
+      - name: Preflight runner config
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          feeds="config/feeds.${RUNNER_TOPIC}.txt"
+          interests="config/interests.${RUNNER_TOPIC}.md"
+          prompt="config/triage_prompt.txt"
+          if [[ -f "$feeds" && -f "$interests" && -f "$prompt" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Runner config found for topic '$RUNNER_TOPIC'."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping: missing runner config files for topic '$RUNNER_TOPIC'."
+            echo "Expected: $feeds, $interests, $prompt"
+          fi
+
+      - name: Run runner weekly (gardener default-on)
+        if: steps.preflight.outputs.enabled == 'true' && secrets.OPENAI_API_KEY != ''
+        env:
+          TOCIFY_BACKEND: "openai"
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          HTTP_PROXY: ""
+          HTTPS_PROXY: ""
+          ALL_PROXY: ""
+          NO_PROXY: "api.openai.com"
+          MIN_SCORE_READ: "0.35"
+          LOOKBACK_DAYS: "7"
+          SUMMARY_MAX_CHARS: "500"
+          PREFILTER_KEEP_TOP: "200"
+          BATCH_SIZE: "50"
+        run: uv run python -m tocify.runner.cli --vault . weekly --topic "$RUNNER_TOPIC"
+
+      - name: Commit runner outputs
+        if: steps.preflight.outputs.enabled == 'true' && secrets.OPENAI_API_KEY != ''
+        run: |
+          git config user.name "toc-digest-bot"
+          git config user.email "toc-digest-bot@users.noreply.github.com"
+          git add -A agent/briefs config/briefs_articles.csv topics 2>/dev/null || true
+          git commit -m "Update weekly runner outputs" || exit 0
+          git push

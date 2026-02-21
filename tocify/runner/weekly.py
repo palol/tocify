@@ -44,7 +44,7 @@ NEWSPAPER_TIMEOUT = int(os.getenv("NEWSPAPER_TIMEOUT", "10"))
 TOPIC_REDUNDANCY_ENABLED = os.getenv("TOPIC_REDUNDANCY", "1").strip().lower() in ("1", "true", "yes")
 TOPIC_REDUNDANCY_LOOKBACK_DAYS = int(os.getenv("TOPIC_REDUNDANCY_LOOKBACK_DAYS", "56"))
 TOPIC_REDUNDANCY_BATCH_SIZE = int(os.getenv("TOPIC_REDUNDANCY_BATCH_SIZE", "25"))
-TOPIC_GARDENER_ENABLED = os.getenv("TOPIC_GARDENER", "0").strip().lower() in ("1", "true", "yes")
+TOPIC_GARDENER_ENABLED = os.getenv("TOPIC_GARDENER", "1").strip().lower() in ("1", "true", "yes")
 
 BRIEFS_ARTICLES_COLUMNS = [
     "topic", "week_of", "url", "title", "source", "published_utc", "score", "brief_filename",

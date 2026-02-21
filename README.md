@@ -104,6 +104,7 @@ This applies to newly generated outputs (`digest.md`, weekly briefs, monthly rou
 For multiple topics and a shared vault layout, use the **`tocify-runner`** CLI (same package). It uses tocify for RSS fetch, prefilter, triage, and render; adds per-topic feeds/interests, topic redundancy vs a digital garden, topic gardener, and `briefs_articles.csv`.
 
 Set **`BCI_VAULT_ROOT`** to the vault root (directory containing `config/`, `agent/`). Default is current directory.
+Topic gardener is **enabled by default** for runner weekly jobs; set **`TOPIC_GARDENER=0`** to opt out.
 
 **Commands**
 
@@ -124,3 +125,8 @@ Set **`BCI_VAULT_ROOT`** to the vault root (directory containing `config/`, `age
 - `agent/briefs/` — Weekly briefs and monthly/annual outputs
 - `agent/logs/` — Logs
 - `topics/` — Optional digital garden for topic redundancy and gardener
+
+**Automation notes**
+
+- `.github/workflows/weekly-runner.yml` runs `tocify.runner` weekly when runner config files exist.
+- Legacy digest workflows (`weekly-digest.yml`, `weekly-digest-cursor.yml`) run `digest.py` only; they do not invoke runner gardener.
