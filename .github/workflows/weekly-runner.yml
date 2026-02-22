@@ -1,9 +1,6 @@
 name: Weekly ToC Runner
 
 on:
-  schedule:
-    # Mondays 08:00 America/Los_Angeles ≈ 16:00 UTC
-    - cron: "00 16 * * 1"
   workflow_dispatch:
     inputs:
       topic:
