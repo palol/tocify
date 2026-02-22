@@ -242,14 +242,18 @@ def _render_topic_refs_for_redundancy(topic_paths: list[Path]) -> str:
 
 
 def _call_cursor_topic_redundancy(
-    topic_paths: list[Path], items: list[dict], allowed_source_url_index: dict[str, str] | None = None
+    topic_paths: list[Path],
+    items: list[dict],
+    allowed_source_url_index: dict[str, str] | None = None,
+    topic_refs: str | None = None,
 ) -> tuple[set[str], list[dict]]:
     """Call Cursor to flag items redundant vs existing topic pages; return (redundant ids, mentions)."""
     if not topic_paths or not items:
         return set(), []
     if allowed_source_url_index is None:
         allowed_source_url_index = _build_allowed_source_url_index(items)
-    topic_refs = _render_topic_refs_for_redundancy(topic_paths) or "(no readable topic content)"
+    if topic_refs is None:
+        topic_refs = _render_topic_refs_for_redundancy(topic_paths) or "(no readable topic content)"
     lean_items = [
         {
             "id": it["id"],
@@ -346,12 +350,13 @@ def filter_topic_redundant_items(
         return items, 0, []
     if allowed_source_url_index is None:
         allowed_source_url_index = _build_allowed_source_url_index(items)
+    topic_refs = _render_topic_refs_for_redundancy(topic_paths) or "(no readable topic content)"
     all_redundant: set[str] = set()
     all_mentions: list[dict] = []
     for i in range(0, len(items), batch_size):
         batch = items[i : i + batch_size]
         redundant, mentions = _call_cursor_topic_redundancy(
-            topic_paths, batch, allowed_source_url_index=allowed_source_url_index
+            topic_paths, batch, allowed_source_url_index=allowed_source_url_index, topic_refs=topic_refs
         )
         all_redundant |= redundant
         all_mentions.extend([m for m in mentions if str(m.get("id") or "").strip() in redundant])
