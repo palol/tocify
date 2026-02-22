@@ -8,6 +8,8 @@ This document lists code identified as unused (dead) and safe to remove. Imports
 
 None currently. (Any new dead code found by linters should be listed here.)
 
+A full dead-code review was done across the codebase; no new dead code was identified, so the above is intentional.
+
 ---
 
 ## Already removed (no longer in tree)
@@ -42,7 +44,7 @@ The following were previously listed as "marked for removal"; the code no longer
 
 ## Optional / non-code
 
-- **`tests/__init__.py`** — empty file. Can be removed if tests are not run as a package; keeping it is harmless and often used as a package marker.
+- **`tests/__init__.py`** — empty file. Kept because tests are run as a package (`from tests.runner_test_utils import ...`); removing it breaks collection. Harmless to keep.
 
 ---
 

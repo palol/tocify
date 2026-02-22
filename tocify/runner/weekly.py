@@ -96,6 +96,27 @@ def load_briefs_articles_urls(csv_path: Path, topic: str | None = None) -> set[s
     return seen
 
 
+def load_brief_link_rows(csv_path: Path, brief_filename: str) -> list[dict]:
+    """Load rows from briefs_articles.csv for the given brief_filename (for link resolution / merge)."""
+    rows: list[dict] = []
+    if not csv_path.exists():
+        return rows
+    with open(csv_path, "r", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames or []
+        if "brief_filename" not in fieldnames or "url" not in fieldnames:
+            return rows
+        for row in reader:
+            if (row.get("brief_filename") or "").strip() != brief_filename:
+                continue
+            rows.append({
+                "brief_filename": brief_filename,
+                "title": (row.get("title") or "").strip(),
+                "url": (row.get("url") or "").strip(),
+            })
+    return rows
+
+
 def load_recent_topic_files(topics_dir: Path, max_age_days: int) -> list[Path]:
     if not topics_dir.exists() or max_age_days <= 0:
         return []
@@ -1083,6 +1104,76 @@ def render_brief_md(
     return with_frontmatter(body, frontmatter)
 
 
+# Used when merging new entries into an existing brief (update header counts)
+BRIEF_HEADER_INCLUDED_RE = re.compile(r"(\*\*Included:\*\*\s*)\d+")
+BRIEF_HEADER_SCORED_RE = re.compile(r"(\*\*Scored:\*\*\s*)\d+")
+
+
+def _parse_brief_body_into_header_and_entries(body: str) -> tuple[str, list[str]]:
+    """Split brief body into header (up to first ---) and list of entry blocks. New entries append after these."""
+    if not body or "\n---\n" not in body:
+        return body.strip(), []
+    parts = body.split("\n---\n")
+    header = (parts[0] or "").strip()
+    entry_blocks = [(p or "").strip() for p in parts[1:] if (p or "").strip()]
+    return header, entry_blocks
+
+
+def _update_brief_header_counts(header: str, merged_included: int, merged_scored: int) -> str:
+    """Replace **Included:** N and **Scored:** M in header with merged counts (deterministic)."""
+    header = BRIEF_HEADER_INCLUDED_RE.sub(rf"\g<1>{merged_included}", header)
+    header = BRIEF_HEADER_SCORED_RE.sub(rf"\g<1>{merged_scored}", header)
+    return header
+
+
+def _render_brief_entry_blocks(kept: list[dict], items_by_id: dict[str, dict]) -> str:
+    """Render only the entry blocks (## title, source, score, ... ---) for given kept items. Same format as render_brief_md."""
+    lines: list[str] = []
+    for r in kept:
+        it = items_by_id.get(r["id"], {})
+        tags = ", ".join(r.get("tags", [])) if r.get("tags") else ""
+        pub = r.get("published_utc")
+        summary = (it.get("summary") or "").strip()
+        lines += [
+            f"## [{r['title']}]({r['link']})",
+            f"*{r['source']}*  ",
+            f"Score: **{r['score']:.2f}**" + (f"  \nPublished: {pub}" if pub else ""),
+            (f"Tags: {tags}" if tags else ""),
+            "",
+            (r.get("why") or "").strip(),
+            "",
+        ]
+        if summary:
+            lines += ["<details>", "<summary>RSS summary</summary>", "", summary, "", "</details>", ""]
+        lines += ["---", ""]
+    return "\n".join(lines)
+
+
+def _merge_brief_frontmatter(
+    existing_frontmatter: dict,
+    new_kept: list[dict],
+    new_ranked: list,
+    merged_included: int,
+    merged_scored: int,
+) -> dict:
+    """Update frontmatter for merge: deterministic rules only. Other keys copied from existing."""
+    merged = dict(existing_frontmatter)
+    merged["included"] = merged_included
+    merged["scored"] = merged_scored
+    merged["lastmod"] = datetime.now(timezone.utc).date().isoformat()
+    existing_tags = normalize_ai_tags(_string_list(existing_frontmatter.get("tags")))
+    new_tags = aggregate_ranked_item_tags(new_kept) if new_kept else []
+    combined = _merge_unique(existing_tags + new_tags)
+    merged["tags"] = sorted(normalize_ai_tags(combined))
+    return merged
+
+
+def _build_allowed_url_index_from_link_rows(link_rows: list[dict]) -> dict[str, str]:
+    """Build allowed URL index from link metadata rows (for merge path)."""
+    urls = [str(r.get("url") or "").strip() for r in link_rows if r.get("url")]
+    return build_allowed_url_index(urls)
+
+
 def _load_weekly_link_resolver():
     try:
         from tocify.runner.link_resolution import resolve_weekly_heading_links
@@ -1212,6 +1303,9 @@ def run_weekly(
     brief_path = paths.briefs_dir / brief_filename
 
     if not items:
+        if brief_path.exists():
+            print("No RSS items; preserving existing brief.")
+            return
         no_items_body = (
             f"# {topic.upper()} Weekly Brief (week of {week_of})\n\n"
             f"_No RSS items found in the last {LOOKBACK_DAYS} days._\n"
@@ -1282,6 +1376,10 @@ def run_weekly(
         items = items[:limit]
         print(f"Limit: capped to {len(items)} items (full pipeline)")
 
+    if not items and brief_path.exists():
+        print("No items to triage for this week; preserving existing brief.")
+        return
+
     tqdm.write(f"Sending {len(items)} RSS items to model (post-filter)")
 
     if USE_NEWSPAPER:
@@ -1303,33 +1401,86 @@ def run_weekly(
 
     ranked = result.get("ranked", [])
     kept = [r for r in ranked if r["score"] >= MIN_SCORE_READ][:MAX_RETURNED]
-    md = render_brief_md(result, items_by_id, kept, topic)
-    allowed_heading_url_index = _build_weekly_allowed_url_index(kept, items_by_id)
-    link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
-    try:
-        md, link_stats = _resolve_weekly_heading_links(md, brief_filename, link_rows)
-        print(
-            "Link resolver: "
-            f"exact={link_stats['exact_matches']}, "
-            f"normalized={link_stats['normalized_matches']}, "
-            f"ambiguous={link_stats['ambiguous']}, "
-            f"missing={link_stats['missing']}, "
-            f"invalid_url={link_stats['invalid_url']}, "
-            f"unchanged={link_stats['unchanged']}"
+
+    if not kept and brief_path.exists():
+        print("No items met threshold this run; preserving existing brief.")
+        return
+
+    if kept and brief_path.exists():
+        # Merge: append new entries to bottom; deterministic frontmatter updates
+        existing_text = brief_path.read_text(encoding="utf-8")
+        existing_frontmatter, existing_body = split_frontmatter_and_body(existing_text)
+        header, entry_blocks = _parse_brief_body_into_header_and_entries(existing_body)
+        existing_included = int(existing_frontmatter.get("included") or 0)
+        existing_scored = int(existing_frontmatter.get("scored") or 0)
+        merged_included = existing_included + len(kept)
+        merged_scored = existing_scored + len(ranked)
+        header = _update_brief_header_counts(header, merged_included, merged_scored)
+        new_entries_md = _render_brief_entry_blocks(kept, items_by_id)
+        if entry_blocks:
+            merged_body = header + "\n---\n\n" + "\n---\n\n".join(entry_blocks) + "\n---\n\n" + new_entries_md
+        else:
+            merged_body = header + "\n---\n\n" + new_entries_md
+        merged_frontmatter = _merge_brief_frontmatter(
+            existing_frontmatter, kept, ranked, merged_included, merged_scored
         )
-    except Exception as e:
-        print(f"[WARN] Link resolver failed; applying strict de-link fallback: {e}")
-    md, hygiene_stats = sanitize_markdown_links(md, allowed_heading_url_index)
-    print(
-        "Link hygiene: "
-        f"kept={hygiene_stats['kept']}, "
-        f"rewritten={hygiene_stats['rewritten']}, "
-        f"delinked={hygiene_stats['delinked']}, "
-        f"invalid={hygiene_stats['invalid']}, "
-        f"unmatched={hygiene_stats['unmatched']}"
-    )
-    brief_path.write_text(md, encoding="utf-8")
-    print(f"Wrote {brief_path}")
+        existing_link_rows = load_brief_link_rows(paths.briefs_articles_csv, brief_filename)
+        new_link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
+        link_rows = existing_link_rows + new_link_rows
+        allowed_heading_url_index = _build_allowed_url_index_from_link_rows(link_rows)
+        md = with_frontmatter(merged_body, merged_frontmatter)
+        try:
+            md, link_stats = _resolve_weekly_heading_links(md, brief_filename, link_rows)
+            print(
+                "Link resolver: "
+                f"exact={link_stats['exact_matches']}, "
+                f"normalized={link_stats['normalized_matches']}, "
+                f"ambiguous={link_stats['ambiguous']}, "
+                f"missing={link_stats['missing']}, "
+                f"invalid_url={link_stats['invalid_url']}, "
+                f"unchanged={link_stats['unchanged']}"
+            )
+        except Exception as e:
+            print(f"[WARN] Link resolver failed; applying strict de-link fallback: {e}")
+        md, hygiene_stats = sanitize_markdown_links(md, allowed_heading_url_index)
+        print(
+            "Link hygiene: "
+            f"kept={hygiene_stats['kept']}, "
+            f"rewritten={hygiene_stats['rewritten']}, "
+            f"delinked={hygiene_stats['delinked']}, "
+            f"invalid={hygiene_stats['invalid']}, "
+            f"unmatched={hygiene_stats['unmatched']}"
+        )
+        brief_path.write_text(md, encoding="utf-8")
+        print(f"Merged {len(kept)} new entries into {brief_path}")
+    else:
+        md = render_brief_md(result, items_by_id, kept, topic)
+        allowed_heading_url_index = _build_weekly_allowed_url_index(kept, items_by_id)
+        link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
+        try:
+            md, link_stats = _resolve_weekly_heading_links(md, brief_filename, link_rows)
+            print(
+                "Link resolver: "
+                f"exact={link_stats['exact_matches']}, "
+                f"normalized={link_stats['normalized_matches']}, "
+                f"ambiguous={link_stats['ambiguous']}, "
+                f"missing={link_stats['missing']}, "
+                f"invalid_url={link_stats['invalid_url']}, "
+                f"unchanged={link_stats['unchanged']}"
+            )
+        except Exception as e:
+            print(f"[WARN] Link resolver failed; applying strict de-link fallback: {e}")
+        md, hygiene_stats = sanitize_markdown_links(md, allowed_heading_url_index)
+        print(
+            "Link hygiene: "
+            f"kept={hygiene_stats['kept']}, "
+            f"rewritten={hygiene_stats['rewritten']}, "
+            f"delinked={hygiene_stats['delinked']}, "
+            f"invalid={hygiene_stats['invalid']}, "
+            f"unmatched={hygiene_stats['unmatched']}"
+        )
+        brief_path.write_text(md, encoding="utf-8")
+        print(f"Wrote {brief_path}")
 
     if not dry_run and kept:
         append_briefs_articles(
