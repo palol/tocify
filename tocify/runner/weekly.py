@@ -1044,6 +1044,11 @@ def run_topic_gardener(
         tqdm.write(f"Topic gardener: applied {applied} topic action(s) under {topics_dir}")
 
 
+def _weekly_brief_title(topic: str, week_of: str) -> str:
+    """Canonical title for a weekly brief (body H1 and frontmatter)."""
+    return f"{topic.upper()} Weekly Brief (week of {week_of})"
+
+
 def render_brief_md(
     result: dict, items_by_id: dict[str, dict], kept: list[dict], topic: str
 ) -> str:
@@ -1052,7 +1057,7 @@ def render_brief_md(
     notes = result.get("notes", "").strip()
     ranked = result.get("ranked", [])
     today = datetime.now(timezone.utc).date().isoformat()
-    title = f"{topic.upper()} Weekly Brief (week of {week_of})"
+    title = _weekly_brief_title(topic, week_of)
     triage_backend = str(result.get("triage_backend") or "unknown")
     triage_model = str(result.get("triage_model") or "unknown")
 
@@ -1306,12 +1311,13 @@ def run_weekly(
         if brief_path.exists():
             print("No RSS items; preserving existing brief.")
             return
+        no_items_title = _weekly_brief_title(topic, week_of)
         no_items_body = (
-            f"# {topic.upper()} Weekly Brief (week of {week_of})\n\n"
+            f"# {no_items_title}\n\n"
             f"_No RSS items found in the last {LOOKBACK_DAYS} days._\n"
         )
         no_items_frontmatter = {
-            "title": f"{topic.upper()} Weekly Brief (week of {week_of})",
+            "title": no_items_title,
             "date": week_of,
             "lastmod": datetime.now(timezone.utc).date().isoformat(),
             "tags": [],
