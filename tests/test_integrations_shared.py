@@ -1,6 +1,5 @@
 """Tests for tocify.integrations._shared (extract_first_json_object, parse_structured_response)."""
 
-import json
 import unittest
 
 from tocify.integrations._shared import (

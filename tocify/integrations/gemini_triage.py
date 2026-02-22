@@ -16,10 +16,12 @@ SUMMARY_MAX_CHARS = int(os.getenv("SUMMARY_MAX_CHARS", "500"))
 
 
 def is_available() -> bool:
+    """Return True if GEMINI_API_KEY is set (required for Gemini backend)."""
     return bool(os.environ.get("GEMINI_API_KEY", "").strip())
 
 
 def make_gemini_client() -> Any:
+    """Create Gemini client using GEMINI_API_KEY (google-genai)."""
     key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
         raise RuntimeError("GEMINI_API_KEY missing/invalid.")
@@ -60,6 +62,7 @@ def _parse_response_text(response_text: str) -> dict:
 
 
 def call_gemini_triage(client: Any, interests: dict, items: list[dict]) -> dict:
+    """Run triage prompt and return structured result (notes, ranked) using the given Gemini client."""
     model = os.getenv("GEMINI_MODEL", "").strip() or "gemini-2.0-flash"
     prompt, _ = build_triage_prompt(interests, items, summary_max_chars=SUMMARY_MAX_CHARS)
 

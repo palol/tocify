@@ -2,16 +2,13 @@
 
 import csv
 import json
-import math
 import os
 import re
-import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-from datetime import date, datetime, time as dt_time, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from dotenv import load_dotenv
 from newspaper import Article
@@ -80,6 +77,7 @@ def parse_week_spec(s: str) -> str:
 
 
 def load_briefs_articles_urls(csv_path: Path, topic: str | None = None) -> set[str]:
+    """Load and return normalized URLs from briefs_articles.csv, optionally filtered by topic."""
     seen = set()
     if not csv_path.exists():
         return seen
@@ -225,6 +223,7 @@ def _render_topic_refs_for_redundancy(topic_paths: list[Path]) -> str:
 def _call_cursor_topic_redundancy(
     topic_paths: list[Path], items: list[dict], allowed_source_url_index: dict[str, str] | None = None
 ) -> tuple[set[str], list[dict]]:
+    """Call Cursor to flag items redundant vs existing topic pages; return (redundant ids, mentions)."""
     if not topic_paths or not items:
         return set(), []
     if allowed_source_url_index is None:
@@ -321,6 +320,7 @@ def filter_topic_redundant_items(
     batch_size: int,
     allowed_source_url_index: dict[str, str] | None = None,
 ) -> tuple[list[dict], int, list[dict]]:
+    """Filter items that are redundant vs existing topic pages; return (kept, num_removed, mentions)."""
     if not topic_paths or not items:
         return items, 0, []
     if allowed_source_url_index is None:
@@ -756,6 +756,7 @@ def _apply_redundant_mention_to_body(body: str, matched_fact_bullet: str, source
 
 
 def _apply_redundant_mentions(topics_dir: Path, mentions: list[dict], today: str) -> dict[str, int]:
+    """Apply redundant-article mentions to matching topic pages (Gardner updates section); return stats."""
     stats = {
         "mentions_input": len(mentions),
         "mentions_applied": 0,
@@ -845,6 +846,7 @@ def _list_existing_topic_previews(topics_dir: Path, max_preview_chars: int = 400
 
 
 def _call_cursor_topic_gardener(brief_content: str, existing_topics: list[dict], topic: str) -> list[dict]:
+    """Call Cursor to suggest create/update topic actions from brief content and existing topic previews."""
     existing_str = "\n\n".join(
         f"- **{t['slug']}**:\n{t['preview']}" for t in existing_topics
     ) or "(no existing topics yet)"
@@ -981,6 +983,7 @@ def run_topic_gardener(
     week_of: str | None = None,
     allowed_source_url_index: dict[str, str] | None = None,
 ) -> None:
+    """Run topic gardener on a brief: suggest create/update topic pages and apply actions under topics_dir."""
     topics_dir.mkdir(parents=True, exist_ok=True)
     if not brief_path.exists():
         return
@@ -1023,6 +1026,7 @@ def run_topic_gardener(
 def render_brief_md(
     result: dict, items_by_id: dict[str, dict], kept: list[dict], topic: str
 ) -> str:
+    """Render triage result and kept items to weekly brief markdown with frontmatter."""
     week_of = result["week_of"]
     notes = result.get("notes", "").strip()
     ranked = result.get("ranked", [])
@@ -1117,6 +1121,7 @@ def _build_weekly_link_metadata_rows(
 
 
 def _resolve_weekly_heading_links(md: str, brief_filename: str, rows: list[dict]) -> tuple[str, dict]:
+    """Canonicalize ## [Title](url) links in brief markdown using per-brief metadata rows."""
     resolver = _load_weekly_link_resolver()
     return resolver(md, brief_filename, rows)
 
@@ -1139,6 +1144,7 @@ def append_briefs_articles(
     items_by_id: dict[str, dict],
     brief_filename: str,
 ) -> None:
+    """Append rows for kept items to briefs_articles.csv (create file and header if missing)."""
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     file_exists = csv_path.exists()
     with open(csv_path, "a", newline="", encoding="utf-8") as f:

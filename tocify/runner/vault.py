@@ -14,11 +14,7 @@ from tocify.integrations import get_triage_runtime_metadata, resolve_backend_nam
 from tocify.integrations._shared import extract_first_json_object
 
 VAULT_ROOT = Path(os.environ.get("BCI_VAULT_ROOT", ".")).resolve()
-CONFIG_DIR = VAULT_ROOT / "config"
-CONTENT_DIR = VAULT_ROOT / "content"
-BRIEFS_DIR = CONTENT_DIR / "briefs"
-LOGS_DIR = CONTENT_DIR / "logs"
-TOPICS_DIR = CONTENT_DIR / "topics"
+
 
 @dataclass(frozen=True)
 class TopicPaths:
@@ -218,6 +214,7 @@ def _run_openai_prompt(
     expand_refs: bool | None,
     raise_on_error: bool,
 ) -> PromptRunResult:
+    """Execute prompt via OpenAI Responses API; optional JSON schema for structured output."""
     result = PromptRunResult(backend="openai", model=model)
     try:
         expanded_prompt, refs, ref_chars = _maybe_expand_prompt(
@@ -300,6 +297,7 @@ def _run_gemini_prompt(
     expand_refs: bool | None,
     raise_on_error: bool,
 ) -> PromptRunResult:
+    """Execute prompt via Gemini API; optional JSON schema for structured output."""
     result = PromptRunResult(backend="gemini", model=model)
     try:
         expanded_prompt, refs, ref_chars = _maybe_expand_prompt(
@@ -392,6 +390,7 @@ def _run_cursor_prompt(
     trust: bool,
     raise_on_error: bool,
 ) -> PromptRunResult:
+    """Execute prompt via Cursor CLI (`agent -p`); returns raw text (no structured output)."""
     result = PromptRunResult(backend="cursor", model=model)
     cmd = ["agent", "-p", "--output-format", "text"]
     if trust:

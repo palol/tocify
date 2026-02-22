@@ -1,5 +1,6 @@
 # Agent context
 
+For AI/contributor context only; user-facing docs are in README.md.
 
 ## Instructions 
 

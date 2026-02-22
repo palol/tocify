@@ -5,6 +5,8 @@ import types
 import unittest
 from pathlib import Path
 
+from tests.runner_test_utils import write_runner_inputs
+
 
 def _load_weekly_module():
     tocify_mod = types.ModuleType("tocify")
@@ -92,14 +94,6 @@ def _load_weekly_module():
     return module
 
 
-def _write_runner_inputs(root: Path, topic: str = "bci") -> None:
-    config_dir = root / "config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / f"feeds.{topic}.txt").write_text("Example | https://example.com/rss\n", encoding="utf-8")
-    (config_dir / f"interests.{topic}.md").write_text("keywords:\n- bci\n", encoding="utf-8")
-    (config_dir / "triage_prompt.txt").write_text("Prompt", encoding="utf-8")
-
-
 class WeeklyLinkResolutionTests(unittest.TestCase):
     def test_run_weekly_rewrites_heading_to_canonical_url(self) -> None:
         weekly = _load_weekly_module()
@@ -108,7 +102,7 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            _write_runner_inputs(root)
+            write_runner_inputs(root)
             weekly.run_weekly(topic="bci", week_spec="2026 week 8", dry_run=0, vault_root=root)
             brief_path = root / "content" / "briefs" / "2026-02-16_bci_weekly-brief.md"
             content = brief_path.read_text(encoding="utf-8")
@@ -127,7 +121,7 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
-                _write_runner_inputs(root)
+                write_runner_inputs(root)
                 weekly.run_weekly(topic="bci", week_spec="2026 week 8", dry_run=0, vault_root=root)
                 brief_path = root / "content" / "briefs" / "2026-02-16_bci_weekly-brief.md"
                 content = brief_path.read_text(encoding="utf-8")

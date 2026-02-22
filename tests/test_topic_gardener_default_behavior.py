@@ -7,6 +7,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
+from tests.runner_test_utils import write_runner_inputs
+
 
 def _load_weekly_module():
     tocify_mod = types.ModuleType("tocify")
@@ -94,14 +96,6 @@ def _load_weekly_module():
     return module
 
 
-def _write_runner_inputs(root: Path, topic: str = "bci") -> None:
-    config_dir = root / "config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / f"feeds.{topic}.txt").write_text("Example | https://example.com/rss\n", encoding="utf-8")
-    (config_dir / f"interests.{topic}.md").write_text("keywords:\n- bci\n", encoding="utf-8")
-    (config_dir / "triage_prompt.txt").write_text("Prompt", encoding="utf-8")
-
-
 class TopicGardenerDefaultBehaviorTests(unittest.TestCase):
     def test_default_env_enables_topic_gardener(self) -> None:
         previous = os.environ.pop("TOPIC_GARDENER", None)
@@ -133,7 +127,7 @@ class TopicGardenerDefaultBehaviorTests(unittest.TestCase):
         weekly.run_topic_gardener = Mock()
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            _write_runner_inputs(root)
+            write_runner_inputs(root)
             weekly.run_weekly(topic="bci", week_spec="2026 week 8", dry_run=0, vault_root=root)
         weekly.run_topic_gardener.assert_called_once()
 
@@ -144,7 +138,7 @@ class TopicGardenerDefaultBehaviorTests(unittest.TestCase):
         weekly.run_topic_gardener = Mock()
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            _write_runner_inputs(root)
+            write_runner_inputs(root)
             weekly.run_weekly(topic="bci", week_spec="2026 week 8", dry_run=1, vault_root=root)
         weekly.run_topic_gardener.assert_not_called()
 
@@ -155,7 +149,7 @@ class TopicGardenerDefaultBehaviorTests(unittest.TestCase):
         weekly.run_topic_gardener = Mock()
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            _write_runner_inputs(root)
+            write_runner_inputs(root)
             weekly.run_weekly(topic="bci", week_spec="2026 week 8", dry_run=0, vault_root=root)
         weekly.run_topic_gardener.assert_not_called()
 

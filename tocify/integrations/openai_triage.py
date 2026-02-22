@@ -12,6 +12,7 @@ SUMMARY_MAX_CHARS = int(os.getenv("SUMMARY_MAX_CHARS", "500"))
 
 
 def make_openai_client() -> OpenAI:
+    """Create OpenAI client using OPENAI_API_KEY (must start with sk-)."""
     key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not key.startswith("sk-"):
         raise RuntimeError("OPENAI_API_KEY missing/invalid (expected to start with 'sk-').")
@@ -25,6 +26,7 @@ def make_openai_client() -> OpenAI:
 
 
 def call_openai_triage(client: OpenAI, interests: dict, items: list[dict]) -> dict:
+    """Run triage prompt and return structured result (notes, ranked) using the given client."""
     model = os.getenv("OPENAI_MODEL", "").strip() or "gpt-4o"
     prompt, _ = build_triage_prompt(interests, items, summary_max_chars=SUMMARY_MAX_CHARS)
 

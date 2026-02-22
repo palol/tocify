@@ -1,4 +1,5 @@
-"""Triage backends by architecture. Dispatch via TOCIFY_BACKEND; add new backends by registering here."""
+"""Triage backends by architecture. Dispatch via TOCIFY_BACKEND; add new backends by registering here.
+Default when TOCIFY_BACKEND is unset: cursor if CURSOR_API_KEY is set, else openai. Gemini only when explicitly set."""
 
 import os
 

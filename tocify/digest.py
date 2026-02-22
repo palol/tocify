@@ -54,13 +54,18 @@ def load_feeds(path: str) -> list[dict]:
     return feeds
 
 def read_text(path: str) -> str:
+    """Read and return the entire contents of a text file."""
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
 
+
 def sha1(s: str) -> str:
+    """Return SHA-1 hex digest of the string."""
     return hashlib.sha1(s.encode("utf-8")).hexdigest()
 
+
 def section(md: str, heading: str) -> str:
+    """Extract the first markdown section body under the given heading (e.g. ## Keywords)."""
     m = re.search(rf"(?im)^\s*#{1,6}\s+{re.escape(heading)}\s*$", md)
     if not m:
         return ""
@@ -69,6 +74,7 @@ def section(md: str, heading: str) -> str:
     return (rest[:m2.start()] if m2 else rest).strip()
 
 def parse_interests_md(md: str) -> dict:
+    """Parse interests markdown with Keywords and Narrative sections; return dict with keys keywords (list) and narrative (str, truncated to INTERESTS_MAX_CHARS)."""
     keywords = []
     for line in section(md, "Keywords").splitlines():
         line = re.sub(r"^[\-\*\+]\s+", "", line.strip())
@@ -82,6 +88,7 @@ def parse_interests_md(md: str) -> dict:
 
 # ---- rss ----
 def parse_date(entry) -> datetime | None:
+    """Return datetime (UTC) for an RSS entry from published/updated fields, or None."""
     for attr in ("published_parsed", "updated_parsed"):
         t = getattr(entry, attr, None)
         if t:
@@ -142,6 +149,7 @@ def fetch_rss_items(feeds: list[dict], end_date: date | None = None) -> list[dic
 
 # ---- local prefilter ----
 def keyword_prefilter(items: list[dict], keywords: list[str], keep_top: int) -> list[dict]:
+    """Score items by keyword hits and return top keep_top (or unfiltered slice if few matches)."""
     kws = [k.lower() for k in keywords if k.strip()]
     def hits(it):
         text = (it.get("title","") + " " + it.get("summary","")).lower()
@@ -191,6 +199,7 @@ def triage_in_batches(
 
 # ---- render ----
 def render_digest_md(result: dict, items_by_id: dict[str, dict]) -> str:
+    """Render triage result and items_by_id to markdown with YAML frontmatter."""
     week_of = result["week_of"]
     notes = result.get("notes", "").strip()
     ranked = result.get("ranked", [])
@@ -249,6 +258,7 @@ def render_digest_md(result: dict, items_by_id: dict[str, dict]) -> str:
 
 
 def main():
+    """Run the single-topic pipeline: interests.md, feeds.txt -> digest.md. Respects env (backend, limits)."""
     interests = parse_interests_md(read_text("interests.md"))
     feeds = load_feeds("feeds.txt")
     items = fetch_rss_items(feeds)

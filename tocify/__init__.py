@@ -1,4 +1,4 @@
-"""tocify — Weekly Journal ToC Digest (RSS → triage → digest)."""
+"""tocify — Weekly Journal ToC Digest (RSS → triage → digest) and vault runner for multi-topic weekly/monthly/annual digest."""
 
 from tocify.digest import (
     load_feeds,

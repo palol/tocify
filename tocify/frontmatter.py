@@ -61,6 +61,7 @@ def _parse_scalar(raw: str) -> Any:
 
 
 def parse_frontmatter(text: str) -> dict[str, Any]:
+    """Parse YAML-like frontmatter text (key: value and - list items) into a dict."""
     data: dict[str, Any] = {}
     current_list_key: str | None = None
     for raw_line in text.splitlines():
@@ -100,6 +101,7 @@ def parse_frontmatter(text: str) -> dict[str, Any]:
 
 
 def split_frontmatter_and_body(markdown: str) -> tuple[dict[str, Any], str]:
+    """Split markdown into (frontmatter dict, body). Returns ({}, markdown) if no leading --- block."""
     if not markdown.startswith("---\n"):
         return {}, markdown
     match = _FRONTMATTER_RE.match(markdown)
@@ -130,6 +132,7 @@ def _ordered_keys(data: dict[str, Any]) -> list[str]:
 
 
 def render_frontmatter(data: dict[str, Any]) -> str:
+    """Serialize a dict to YAML frontmatter (--- ... ---) with stable key order."""
     lines = ["---"]
     for key in _ordered_keys(data):
         value = data[key]
@@ -149,6 +152,7 @@ def render_frontmatter(data: dict[str, Any]) -> str:
 
 
 def with_frontmatter(markdown: str, frontmatter: dict[str, Any]) -> str:
+    """Replace or prepend frontmatter on markdown; body is taken from existing content after --- block."""
     _, body = split_frontmatter_and_body(markdown)
     body = body.lstrip("\n")
     out = render_frontmatter(frontmatter)
@@ -160,6 +164,7 @@ def with_frontmatter(markdown: str, frontmatter: dict[str, Any]) -> str:
 
 
 def normalize_ai_tags(tags: list[str] | None, max_tags: int = 12) -> list[str]:
+    """Normalize and dedupe tag strings (lowercase, alphanumeric + hyphen), return up to max_tags."""
     if not tags:
         return []
     normalized: list[str] = []
@@ -182,6 +187,7 @@ def normalize_ai_tags(tags: list[str] | None, max_tags: int = 12) -> list[str]:
 
 
 def aggregate_ai_tags(tag_lists: list[list[str]], max_tags: int = 12) -> list[str]:
+    """Aggregate multiple tag lists by frequency and return top max_tags (normalized)."""
     counts: Counter[str] = Counter()
     for tags in tag_lists:
         per_doc = set(normalize_ai_tags(tags, max_tags=100))
@@ -192,6 +198,7 @@ def aggregate_ai_tags(tag_lists: list[list[str]], max_tags: int = 12) -> list[st
 
 
 def aggregate_ranked_item_tags(ranked_items: list[dict[str, Any]], max_tags: int = 12) -> list[str]:
+    """Extract and aggregate tags from ranked items (each with a 'tags' list); return top max_tags."""
     tag_lists: list[list[str]] = []
     for item in ranked_items:
         tags = item.get("tags")

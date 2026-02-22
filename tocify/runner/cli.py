@@ -2,15 +2,13 @@
 
 import argparse
 import datetime as dt
-import os
-import subprocess
 import sys
 from pathlib import Path
 
 from tqdm import tqdm
 
 from tocify.runner.vault import list_topics, VAULT_ROOT
-from tocify.runner.weekly import run_weekly, parse_week_spec
+from tocify.runner.weekly import run_weekly
 from tocify.runner.monthly import main as monthly_main
 from tocify.runner.annual import main as annual_main
 from tocify.runner.weeks import get_month_metadata, calculate_week_ends
@@ -23,6 +21,7 @@ from tocify.runner.quartz_init import (
 
 
 def cmd_weekly(args: argparse.Namespace) -> None:
+    """Run weekly brief for args.topic and args.week_spec (fetch, triage, redundancy, gardener, brief + CSV)."""
     vault = getattr(args, "vault", None)
     run_weekly(
         topic=args.topic,
@@ -34,6 +33,7 @@ def cmd_weekly(args: argparse.Namespace) -> None:
 
 
 def cmd_monthly(args: argparse.Namespace) -> None:
+    """Generate monthly roundup from weekly briefs for the topic."""
     monthly_main(
         topic=args.topic,
         month=getattr(args, "month", None),
@@ -45,6 +45,7 @@ def cmd_monthly(args: argparse.Namespace) -> None:
 
 
 def cmd_annual(args: argparse.Namespace) -> None:
+    """Generate annual review from monthly roundups for the topic and year."""
     annual_main(
         year=args.year,
         topic=args.topic,
@@ -55,12 +56,14 @@ def cmd_annual(args: argparse.Namespace) -> None:
 
 
 def cmd_list_topics(args: argparse.Namespace) -> None:
+    """Print space-separated topic names discovered from vault config."""
     vault = getattr(args, "vault", None)
     topics = list_topics(vault_root=vault)
     print(" ".join(topics))
 
 
 def cmd_clear_topic(args: argparse.Namespace) -> None:
+    """Remove all briefs, logs, and CSV rows for the given topic (with optional confirmation skip)."""
     clear_main(
         args.topic,
         vault_root=getattr(args, "vault", None),
@@ -115,6 +118,7 @@ def cmd_process_whole_year(args: argparse.Namespace) -> None:
 
 
 def cmd_calculate_weeks(args: argparse.Namespace) -> None:
+    """Print week end dates (or first-day/last-day/days/info) for a month (YYYY-MM)."""
     import json as _json
     month = getattr(args, "month", None)
     if not month:
@@ -146,6 +150,7 @@ def cmd_calculate_weeks(args: argparse.Namespace) -> None:
 
 
 def cmd_init_quartz(args: argparse.Namespace) -> None:
+    """Merge Quartz scaffold into target dir; optionally write .git/info/exclude rules."""
     try:
         result = init_quartz(
             target=args.target,
@@ -180,6 +185,7 @@ def cmd_init_quartz(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    """Parse argv and dispatch to the selected subcommand (weekly, monthly, annual-review, etc.)."""
     parser = argparse.ArgumentParser(prog="tocify-runner", description="Vault/multi-topic runner for tocify")
     parser.add_argument("--vault", type=Path, default=None, help="Vault root (default: BCI_VAULT_ROOT or .)")
     subparsers = parser.add_subparsers(dest="command", required=True)

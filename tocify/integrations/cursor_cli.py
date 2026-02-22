@@ -25,6 +25,7 @@ Return **only** a single JSON object, no markdown code fences, no commentary. Es
 
 
 def is_available() -> bool:
+    """Return True if CURSOR_API_KEY is set (required for Cursor backend)."""
     return bool(os.environ.get("CURSOR_API_KEY", "").strip())
 
 

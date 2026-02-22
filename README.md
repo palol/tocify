@@ -59,7 +59,7 @@ Alternatively use pip and a venv as usual; the GitHub workflow uses uv and reads
 3. Force backend with **`TOCIFY_BACKEND=gemini`**.
 4. Locally: copy `.env.example` to `.env`, add your key, run `python digest.py`.
 
-Backend is auto-chosen from which key is set, or set **`TOCIFY_BACKEND=openai`**, **`cursor`**, or **`gemini`** to force.
+Backend selection: if **`TOCIFY_BACKEND`** is set, that backend is used. Otherwise, if **`CURSOR_API_KEY`** is set then **`cursor`** is used, else **`openai`**. Use **`TOCIFY_BACKEND=openai`**, **`cursor`**, or **`gemini`** to force. (Gemini is only used when explicitly set.)
 For Cursor backend, the terminal command must be available as **`agent`** on `PATH`.
 
 ---
@@ -102,7 +102,7 @@ This applies to newly generated outputs (`digest.md`, weekly briefs, monthly rou
 
 ## Vault / multi-topic runner (`tocify-runner`)
 
-For multiple topics and a shared vault layout, use the **`tocify-runner`** CLI (same package). It uses tocify for RSS fetch, prefilter, triage, and render; adds per-topic feeds/interests, topic redundancy vs a digital garden, topic gardener, and `briefs_articles.csv`.
+For multiple topics and a shared vault layout, use the **`tocify-runner`** CLI (same package). After installing the package, the command is **`tocify`** (e.g. `tocify weekly --topic bci`); help text shows the program name as "tocify-runner". It uses tocify for RSS fetch, prefilter, triage, and render; adds per-topic feeds/interests, topic redundancy vs a digital garden, topic gardener, and `briefs_articles.csv`.
 Runner AI steps (weekly triage, topic redundancy, topic gardener, monthly, annual) follow the selected backend.
 
 Set **`BCI_VAULT_ROOT`** to the vault root (directory containing `config/`, `content/`). Default is current directory.
@@ -111,16 +111,16 @@ Gardener writes topic updates as **fact bullet lists** under a persistent `## Ga
 If backend is `cursor` and `agent` is not found, runner exits with an actionable error; set `TOCIFY_BACKEND=openai` or `gemini` to use API backends instead.
 Weekly brief generation now canonicalizes `## [Title](url)` heading links using per-brief metadata rows (exact title first, then unique normalized-title match). If no deterministic canonical match is available, the existing rendered link is kept. This applies to newly generated weekly briefs; monthly and annual outputs are unchanged in this cycle.
 
-**Commands**
+**Commands** (use **`tocify`** when running the installed package)
 
-- **Weekly brief**: `tocify-runner weekly --topic bci` or `tocify-runner weekly --topic lookdeep "2025 week 2"`
-- **Monthly roundup**: `tocify-runner monthly --topic bci --month 2025-01`
-- **Annual review**: `tocify-runner annual-review --year 2025 --topic bci`
-- **List topics**: `tocify-runner list-topics`
-- **Clear topic data**: `tocify-runner clear-topic bci --yes`
-- **Process whole year**: `tocify-runner process-whole-year 2025 --topic bci`
-- **Calculate weeks**: `tocify-runner calculate-weeks 2026-01`
-- **Initialize Quartz scaffold**: `tocify-runner init-quartz --target . --write-local-exclude`
+- **Weekly brief**: `tocify weekly --topic bci` or `tocify weekly --topic lookdeep "2025 week 2"`
+- **Monthly roundup**: `tocify monthly --topic bci --month 2025-01`
+- **Annual review**: `tocify annual-review --year 2025 --topic bci`
+- **List topics**: `tocify list-topics`
+- **Clear topic data**: `tocify clear-topic bci --yes`
+- **Process whole year**: `tocify process-whole-year 2025 --topic bci`
+- **Calculate weeks**: `tocify calculate-weeks 2026-01`
+- **Initialize Quartz scaffold**: `tocify init-quartz --target . --write-local-exclude`
 
 `init-quartz` merges Quartz v4 scaffold paths into the target root (including `quartz/` and `content/`) and skips existing files by default. Use `--overwrite` to replace existing files. `--write-local-exclude` writes Quartz ignore rules into `.git/info/exclude` (local-only, not committed).
 
