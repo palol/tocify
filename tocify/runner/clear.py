@@ -1,10 +1,83 @@
-"""Remove all data for a topic: briefs/logs matching *_<topic>_*, and that topic's rows from briefs_articles.csv."""
+"""Remove all data for a topic: briefs/logs matching *_<topic>_*, and that topic's rows from briefs_articles.csv.
+Also provides cleanup of stray Cursor-produced action JSON files."""
 
 import csv
 import sys
 from pathlib import Path
 
 from tocify.runner.vault import get_topic_paths, VAULT_ROOT
+
+
+def _is_canonical_topic_actions(path: Path, vault_root: Path) -> bool:
+    """True if path is content/logs/topic_actions_*.json (tocify's intentional log)."""
+    try:
+        path = path.resolve()
+        root = vault_root.resolve()
+        logs_dir = root / "content" / "logs"
+        if not str(path).startswith(str(logs_dir)):
+            return False
+        name = path.name
+        return name.startswith("topic_actions_") and name.endswith(".json")
+    except (ValueError, OSError):
+        return False
+
+
+def find_stray_action_json(vault_root: Path | None = None) -> list[Path]:
+    """Find *.json files with 'action' in the filename under the vault, excluding canonical topic_actions_*.json in content/logs/."""
+    root = (vault_root or VAULT_ROOT).resolve()
+    stray: list[Path] = []
+    # Scan root (files only), content/, and config/ (recursive)
+    for p in root.glob("*.json"):
+        if p.is_file() and "action" in p.name.lower():
+            stray.append(p)
+    for d in (root / "content", root / "config"):
+        if not d.exists() or not d.is_dir():
+            continue
+        for p in d.rglob("*.json"):
+            if not p.is_file():
+                continue
+            if "action" not in p.name.lower():
+                continue
+            if _is_canonical_topic_actions(p, root):
+                continue
+            stray.append(p)
+    return sorted(set(stray))
+
+
+def clean_action_json(
+    vault_root: Path | None = None,
+    dry_run: bool = True,
+    stray: list[Path] | None = None,
+) -> int:
+    """Remove stray action JSON files (preserves content/logs/topic_actions_*.json). Returns number removed."""
+    if stray is None:
+        stray = find_stray_action_json(vault_root=vault_root)
+    removed = 0
+    for p in stray:
+        try:
+            if not dry_run:
+                p.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
+def clean_stray_action_json_in_logs(logs_dir: Path, keep_filename: str) -> int:
+    """Remove from logs_dir any *action*.json whose name is not keep_filename. Returns number removed."""
+    if not logs_dir.exists() or not logs_dir.is_dir():
+        return 0
+    removed = 0
+    for p in logs_dir.glob("*action*.json"):
+        if not p.is_file():
+            continue
+        if p.name != keep_filename:
+            try:
+                p.unlink()
+                removed += 1
+            except OSError:
+                pass
+    return removed
 
 
 def main(topic: str, vault_root: Path | None = None, confirm: bool = False) -> None:
