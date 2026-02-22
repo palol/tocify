@@ -3,9 +3,12 @@ import math
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time as dt_time, timezone, timedelta
+from io import BytesIO
 
 import feedparser
+import requests
 from tqdm import tqdm
 from dateutil import parser as dtparser
 from dotenv import load_dotenv
@@ -23,6 +26,7 @@ PREFILTER_KEEP_TOP = int(os.getenv("PREFILTER_KEEP_TOP", "200"))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "50"))
 MIN_SCORE_READ = float(os.getenv("MIN_SCORE_READ", "0.65"))
 MAX_RETURNED = int(os.getenv("MAX_RETURNED", "40"))
+RSS_FETCH_TIMEOUT = int(os.getenv("RSS_FETCH_TIMEOUT", "25"))
 
 
 # ---- tiny helpers ----
@@ -107,6 +111,51 @@ def parse_date(entry) -> datetime | None:
                 pass
     return None
 
+
+def _fetch_one_feed(
+    feed: dict,
+    cutoff: datetime,
+    end_dt: datetime,
+    timeout: int,
+) -> list[dict]:
+    """Fetch one feed URL and return list of item dicts; on error return [] and log."""
+    url = feed["url"]
+    try:
+        resp = requests.get(url, timeout=timeout)
+        resp.raise_for_status()
+        d = feedparser.parse(BytesIO(resp.content))
+    except Exception as e:
+        tqdm.write(f"[WARN] RSS fetch failed {url!r}: {e}")
+        return []
+    source = (
+        feed.get("name")
+        or (d.feed.get("title") if d.feed else None)
+        or url
+    )
+    source = (source or "").strip()
+    items: list[dict] = []
+    for e in d.entries[:MAX_ITEMS_PER_FEED]:
+        title = (e.get("title") or "").strip()
+        link = (e.get("link") or "").strip()
+        if not (title and link):
+            continue
+        dt = parse_date(e)
+        if dt and (dt < cutoff or dt > end_dt):
+            continue
+        summary = re.sub(r"\s+", " ", (e.get("summary") or e.get("description") or "").strip())
+        if len(summary) > SUMMARY_MAX_CHARS:
+            summary = summary[:SUMMARY_MAX_CHARS] + "…"
+        items.append({
+            "id": sha1(f"{source}|{title}|{link}"),
+            "source": source,
+            "title": title,
+            "link": link,
+            "published_utc": dt.isoformat() if dt else None,
+            "summary": summary,
+        })
+    return items
+
+
 def fetch_rss_items(feeds: list[dict], end_date: date | None = None) -> list[dict]:
     """Fetch RSS items. If end_date is None, use now; else window ends at end_date 23:59:59 UTC."""
     if end_date is None:
@@ -115,36 +164,25 @@ def fetch_rss_items(feeds: list[dict], end_date: date | None = None) -> list[dic
     else:
         end_dt = datetime.combine(end_date, dt_time(23, 59, 59), tzinfo=timezone.utc)
         cutoff = end_dt - timedelta(days=LOOKBACK_DAYS)
-    items = []
-    for feed in feeds:
-        url = feed["url"]
-        d = feedparser.parse(url)
-
-        # Priority: manual name > RSS title > URL
-        source = (
-            feed.get("name")
-            or d.feed.get("title")
-            or url
-        ).strip()
-        for e in d.entries[:MAX_ITEMS_PER_FEED]:
-            title = (e.get("title") or "").strip()
-            link = (e.get("link") or "").strip()
-            if not (title and link):
-                continue
-            dt = parse_date(e)
-            if dt and (dt < cutoff or dt > end_dt):
-                continue
-            summary = re.sub(r"\s+", " ", (e.get("summary") or e.get("description") or "").strip())
-            if len(summary) > SUMMARY_MAX_CHARS:
-                summary = summary[:SUMMARY_MAX_CHARS] + "…"
-            items.append({
-                "id": sha1(f"{source}|{title}|{link}"),
-                "source": source,
-                "title": title,
-                "link": link,
-                "published_utc": dt.isoformat() if dt else None,
-                "summary": summary,
-            })
+    if not feeds:
+        return []
+    timeout = RSS_FETCH_TIMEOUT
+    max_workers = min(
+        int(os.getenv("RSS_FETCH_MAX_WORKERS", "10")),
+        len(feeds),
+    )
+    max_workers = max(1, max_workers)
+    items: list[dict] = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(_fetch_one_feed, feed, cutoff, end_dt, timeout)
+            for feed in feeds
+        ]
+        for fut in futures:
+            try:
+                items.extend(fut.result())
+            except Exception as e:
+                tqdm.write(f"[WARN] RSS fetch task failed: {e}")
     # dedupe + newest first
     items = list({it["id"]: it for it in items}.values())
     items.sort(key=lambda x: x["published_utc"] or "", reverse=True)
