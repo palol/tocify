@@ -48,6 +48,7 @@ MAX_RETURNED = int(os.getenv("MAX_RETURNED", "40"))
 USE_NEWSPAPER = os.getenv("USE_NEWSPAPER", "0").strip().lower() in ("1", "true", "yes")
 NEWSPAPER_MAX_ITEMS = int(os.getenv("NEWSPAPER_MAX_ITEMS", "100"))
 NEWSPAPER_TIMEOUT = int(os.getenv("NEWSPAPER_TIMEOUT", "10"))
+NEWSPAPER_MAX_WORKERS = max(1, min(int(os.getenv("NEWSPAPER_MAX_WORKERS", "3")), 10))
 TOPIC_REDUNDANCY_ENABLED = os.getenv("TOPIC_REDUNDANCY", "1").strip().lower() in ("1", "true", "yes")
 TOPIC_REDUNDANCY_LOOKBACK_DAYS = int(os.getenv("TOPIC_REDUNDANCY_LOOKBACK_DAYS", "56"))
 TOPIC_REDUNDANCY_BATCH_SIZE = int(os.getenv("TOPIC_REDUNDANCY_BATCH_SIZE", "25"))
@@ -133,6 +134,53 @@ def load_recent_topic_files(topics_dir: Path, max_age_days: int) -> list[Path]:
             continue
     out.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return out
+
+
+def load_topic_files_single_pass(
+    topics_dir: Path,
+    max_age_days: int,
+    max_preview_chars: int = 400,
+) -> tuple[str, list[dict]]:
+    """One pass over topic dir: glob, stat, read each file once. Return (topic_refs for recent, existing_topics for all)."""
+    if not topics_dir.exists():
+        return "(no readable topic content)", []
+    now = datetime.now(timezone.utc)
+    cutoff_ts = (now - timedelta(days=max_age_days)).timestamp() if max_age_days > 0 else 0
+    # (path, mtime, text)
+    files: list[tuple[Path, float, str]] = []
+    for p in sorted(topics_dir.glob("*.md")):
+        if not p.is_file():
+            continue
+        try:
+            st = p.stat()
+            text = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        files.append((p, st.st_mtime, text))
+    # existing_topics: all files, slug + preview
+    existing_topics: list[dict] = []
+    ref_parts: list[str] = []
+    # recent: mtime >= cutoff, sorted by mtime desc
+    recent = [(p, mtime, text) for p, mtime, text in files if mtime >= cutoff_ts]
+    recent.sort(key=lambda x: x[1], reverse=True)
+    for p, _mtime, text in files:
+        slug = p.stem
+        preview = text.strip()[:max_preview_chars]
+        if len(text.strip()) > max_preview_chars:
+            preview += "…"
+        existing_topics.append({"slug": slug, "preview": preview})
+    for p, _mtime, text in recent:
+        _, body = split_frontmatter_and_body(text)
+        sanitized = _sanitize_topic_body_for_redundancy(body)
+        if not sanitized:
+            continue
+        ref_parts.append(
+            f"[BEGIN TOPIC: {p.stem} @ {p.resolve()}]\n"
+            f"{sanitized}\n"
+            f"[END TOPIC: {p.stem}]"
+        )
+    topic_refs = "\n\n".join(ref_parts) if ref_parts else "(no readable topic content)"
+    return topic_refs, existing_topics
 
 
 def enrich_item_with_newspaper(item: dict, timeout: int) -> dict:
@@ -248,12 +296,14 @@ def _call_cursor_topic_redundancy(
     topic_refs: str | None = None,
 ) -> tuple[set[str], list[dict]]:
     """Call Cursor to flag items redundant vs existing topic pages; return (redundant ids, mentions)."""
-    if not topic_paths or not items:
+    if not items:
         return set(), []
+    if topic_refs is None:
+        if not topic_paths:
+            return set(), []
+        topic_refs = _render_topic_refs_for_redundancy(topic_paths) or "(no readable topic content)"
     if allowed_source_url_index is None:
         allowed_source_url_index = _build_allowed_source_url_index(items)
-    if topic_refs is None:
-        topic_refs = _render_topic_refs_for_redundancy(topic_paths) or "(no readable topic content)"
     lean_items = [
         {
             "id": it["id"],
@@ -344,13 +394,19 @@ def filter_topic_redundant_items(
     items: list[dict],
     batch_size: int,
     allowed_source_url_index: dict[str, str] | None = None,
+    topic_refs: str | None = None,
 ) -> tuple[list[dict], int, list[dict]]:
     """Filter items that are redundant vs existing topic pages; return (kept, num_removed, mentions)."""
-    if not topic_paths or not items:
+    if not items:
+        return items, 0, []
+    if topic_refs is None or not topic_refs.strip() or topic_refs == "(no readable topic content)":
+        if not topic_paths:
+            return items, 0, []
+        topic_refs = _render_topic_refs_for_redundancy(topic_paths) or "(no readable topic content)"
+    if topic_refs == "(no readable topic content)":
         return items, 0, []
     if allowed_source_url_index is None:
         allowed_source_url_index = _build_allowed_source_url_index(items)
-    topic_refs = _render_topic_refs_for_redundancy(topic_paths) or "(no readable topic content)"
     all_redundant: set[str] = set()
     all_mentions: list[dict] = []
     for i in range(0, len(items), batch_size):
@@ -1008,6 +1064,7 @@ def run_topic_gardener(
     logs_dir: Path | None = None,
     week_of: str | None = None,
     allowed_source_url_index: dict[str, str] | None = None,
+    existing_topics: list[dict] | None = None,
 ) -> None:
     """Run topic gardener on a brief: suggest create/update topic pages and apply actions under topics_dir."""
     topics_dir.mkdir(parents=True, exist_ok=True)
@@ -1015,7 +1072,8 @@ def run_topic_gardener(
         return
     brief_content = brief_path.read_text(encoding="utf-8")
     brief_meta = _extract_brief_metadata(brief_path)
-    existing_topics = _list_existing_topic_previews(topics_dir)
+    if existing_topics is None:
+        existing_topics = _list_existing_topic_previews(topics_dir)
     disable = not sys.stderr.isatty()
     with tqdm(desc="Topic gardener (agent)", total=None, unit="", disable=disable):
         actions = _call_cursor_topic_gardener(brief_content, existing_topics, topic)
@@ -1184,11 +1242,19 @@ def _build_allowed_url_index_from_link_rows(link_rows: list[dict]) -> dict[str, 
     return build_allowed_url_index(urls)
 
 
+_weekly_link_resolver_fn = None
+
+
 def _load_weekly_link_resolver():
+    """Load and cache the weekly heading link resolver (once per process)."""
+    global _weekly_link_resolver_fn
+    if _weekly_link_resolver_fn is not None:
+        return _weekly_link_resolver_fn
     try:
         from tocify.runner.link_resolution import resolve_weekly_heading_links
 
-        return resolve_weekly_heading_links
+        _weekly_link_resolver_fn = resolve_weekly_heading_links
+        return _weekly_link_resolver_fn
     except Exception:
         module_path = Path(__file__).resolve().with_name("link_resolution.py")
         spec = importlib.util.spec_from_file_location("tocify_runner_link_resolution_runtime", module_path)
@@ -1196,7 +1262,8 @@ def _load_weekly_link_resolver():
             raise RuntimeError(f"Failed to load link resolver module at {module_path}")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        return module.resolve_weekly_heading_links
+        _weekly_link_resolver_fn = module.resolve_weekly_heading_links
+        return _weekly_link_resolver_fn
 
 
 def _build_weekly_link_metadata_rows(
@@ -1363,14 +1430,21 @@ def run_weekly(
     topics_dir = root / "content" / "topics"
     allowed_source_url_index = _build_allowed_source_url_index(items)
     redundant_mentions: list[dict] = []
+    topic_data: tuple[str, list[dict]] | None = None
     if TOPIC_REDUNDANCY_ENABLED and items:
         topics_dir.mkdir(parents=True, exist_ok=True)
     if TOPIC_REDUNDANCY_ENABLED and topics_dir.exists() and items:
-        topic_paths = load_recent_topic_files(topics_dir, TOPIC_REDUNDANCY_LOOKBACK_DAYS)
-        if topic_paths:
-            print(f"Topic redundancy: checking {len(items)} items against {len(topic_paths)} topic file(s)")
+        topic_refs, existing_topics_for_gardener = load_topic_files_single_pass(
+            topics_dir, TOPIC_REDUNDANCY_LOOKBACK_DAYS
+        )
+        topic_data = (topic_refs, existing_topics_for_gardener)
+        if topic_refs and topic_refs != "(no readable topic content)":
+            n_recent = topic_refs.count("[BEGIN TOPIC:")
+            print(f"Topic redundancy: checking {len(items)} items against {n_recent} topic file(s)")
             items, dropped, redundant_mentions = filter_topic_redundant_items(
-                topic_paths, items, TOPIC_REDUNDANCY_BATCH_SIZE, allowed_source_url_index=allowed_source_url_index
+                [], items, TOPIC_REDUNDANCY_BATCH_SIZE,
+                allowed_source_url_index=allowed_source_url_index,
+                topic_refs=topic_refs,
             )
             if dropped > 0:
                 print(f"Topic redundancy: dropped {dropped} items, {len(items)} remaining")
@@ -1396,10 +1470,19 @@ def run_weekly(
     if USE_NEWSPAPER:
         to_enrich = items[:NEWSPAPER_MAX_ITEMS]
         disable_newspaper = not sys.stderr.isatty()
-        for i, it in enumerate(tqdm(to_enrich, desc="Newspaper", disable=disable_newspaper)):
-            enrich_item_with_newspaper(it, NEWSPAPER_TIMEOUT)
-            if i < len(to_enrich) - 1:
-                time.sleep(0.2)
+        workers = min(NEWSPAPER_MAX_WORKERS, len(to_enrich))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            list(
+                tqdm(
+                    ex.map(
+                        lambda it: enrich_item_with_newspaper(it, NEWSPAPER_TIMEOUT),
+                        to_enrich,
+                    ),
+                    total=len(to_enrich),
+                    desc="Newspaper",
+                    disable=disable_newspaper,
+                )
+            )
 
     items_by_id = {it["id"]: it for it in items}
 
@@ -1517,4 +1600,5 @@ def run_weekly(
             logs_dir=paths.logs_dir,
             week_of=week_of,
             allowed_source_url_index=_build_allowed_source_url_index(kept_items_for_sources),
+            existing_topics=topic_data[1] if topic_data else None,
         )

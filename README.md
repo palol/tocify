@@ -39,6 +39,29 @@ Alternatively use pip and a venv as usual; the GitHub workflow uses uv and reads
 
 ---
 
+## Testing
+
+Tests use Python’s **unittest** and are run with **uv** from the project root:
+
+```bash
+uv sync
+uv run python -m unittest discover -s tests -p "test_*.py" -v
+```
+
+Or use the convenience script:
+
+```bash
+uv run tocify-test
+```
+
+To run a single test module:
+
+```bash
+uv run python -m unittest tests.test_weekly_link_resolution -v
+```
+
+---
+
 ## Quick start (layperson: OpenAI)
 
 1. **Fork** the repo.
