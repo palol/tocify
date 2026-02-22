@@ -8,7 +8,6 @@ from pathlib import Path
 from tqdm import tqdm
 
 from tocify.runner.vault import list_topics, VAULT_ROOT
-from tocify.runner.weekly import run_weekly
 from tocify.runner.monthly import main as monthly_main
 from tocify.runner.annual import main as annual_main
 from tocify.runner.weeks import get_month_metadata, calculate_week_ends
@@ -18,10 +17,13 @@ from tocify.runner.quartz_init import (
     DEFAULT_QUARTZ_REPO,
     init_quartz,
 )
+from tocify.runner.dashboard import build_dashboard
 
 
 def cmd_weekly(args: argparse.Namespace) -> None:
     """Run weekly brief for args.topic and args.week_spec (fetch, triage, redundancy, gardener, brief + CSV)."""
+    from tocify.runner.weekly import run_weekly
+
     vault = getattr(args, "vault", None)
     run_weekly(
         topic=args.topic,
@@ -73,6 +75,8 @@ def cmd_clear_topic(args: argparse.Namespace) -> None:
 
 def cmd_process_whole_year(args: argparse.Namespace) -> None:
     """Run weekly for every ISO week, then monthly for every month, then annual review."""
+    from tocify.runner.weekly import run_weekly
+
     year = args.year
     topic = args.topic
     dry_run = getattr(args, "dry_run", False)
@@ -147,6 +151,24 @@ def cmd_calculate_weeks(args: argparse.Namespace) -> None:
         print(_json.dumps(week_ends))
     else:
         print(" ".join(week_ends))
+
+
+def cmd_dashboard(args: argparse.Namespace) -> None:
+    """Generate articles dashboard Markdown and JSON from briefs_articles.csv."""
+    vault = getattr(args, "vault", None)
+    root = vault or VAULT_ROOT
+    csv_path = root / "content" / "briefs_articles.csv"
+    output_md = getattr(args, "output", None) or (root / "content" / "articles-dashboard.md")
+    output_json = root / "public" / "articles.json"
+    recent_n = getattr(args, "recent", 50)
+    build_dashboard(
+        csv_path,
+        output_md,
+        output_json,
+        recent_n=recent_n,
+    )
+    print(f"Wrote {output_md}")
+    print(f"Wrote {output_json}")
 
 
 def cmd_init_quartz(args: argparse.Namespace) -> None:
@@ -241,6 +263,12 @@ def main() -> None:
     p_weeks.add_argument("--days", action="store_true")
     p_weeks.add_argument("--info", action="store_true")
     p_weeks.set_defaults(run=cmd_calculate_weeks)
+
+    # dashboard
+    p_dash = subparsers.add_parser("dashboard", help="Generate articles dashboard (Markdown + JSON for Plotly graph)")
+    p_dash.add_argument("--output", type=Path, help="Output Markdown path (default: content/articles-dashboard.md)")
+    p_dash.add_argument("--recent", type=int, default=50, metavar="N", help="Number of recent articles in table (default 50)")
+    p_dash.set_defaults(run=cmd_dashboard)
 
     # init-quartz
     p_quartz = subparsers.add_parser("init-quartz", help="Merge Quartz scaffold into a target directory")

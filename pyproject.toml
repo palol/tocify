@@ -1,10 +1,11 @@
+
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "tocify"
-version = "0.5.0"
+version = "0.6.0"
 description = "Weekly Journal ToC Digest (RSS → triage → digest) and vault runner"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,6 +22,7 @@ dependencies = [
     "mdformat>=1.0.0",
     "mdformat-frontmatter>=0.0.1",
     "mdformat-footnote>=0.1.0",
+    "networkx>=3.0",
 ]
 
 [project.scripts]

@@ -121,6 +121,7 @@ Weekly brief generation now canonicalizes `## [Title](url)` heading links using 
 - **Process whole year**: `tocify process-whole-year 2025 --topic bci`
 - **Calculate weeks**: `tocify calculate-weeks 2026-01`
 - **Initialize Quartz scaffold**: `tocify init-quartz --target . --write-local-exclude`
+- **Articles dashboard**: `tocify dashboard` — Generates `content/articles-dashboard.md` and `public/articles.json` from `briefs_articles.csv` for an interactive Plotly graph in Quartz. Run after weekly (or whenever the CSV changes). To show the graph, add the dashboard component from `tocify/runner/quartz_dashboard/` to your vault’s Quartz layout (see that folder’s README).
 
 `init-quartz` merges Quartz v4 scaffold paths into the target root (including `quartz/` and `content/`) and skips existing files by default. Use `--overwrite` to replace existing files. `--write-local-exclude` writes Quartz ignore rules into `.git/info/exclude` (local-only, not committed).
 
@@ -130,6 +131,8 @@ Weekly brief generation now canonicalizes `## [Title](url)` heading links using 
 - `config/interests.<topic>.md` — Keywords + Narrative
 - `config/triage_prompt.txt` — Shared triage prompt
 - `content/briefs_articles.csv` — Chosen articles (topic column)
+- `content/articles-dashboard.md` — Generated dashboard page (from `tocify dashboard`)
+- `public/articles.json` — Graph data for the dashboard Plotly component
 - `content/briefs/` — Weekly briefs and monthly/annual outputs
 - `content/logs/` — Logs
 - `content/topics/` — Optional digital garden for topic redundancy and gardener
