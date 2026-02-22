@@ -1,4 +1,3 @@
-import hashlib
 import math
 import os
 import re
@@ -13,6 +12,7 @@ from tqdm import tqdm
 from dateutil import parser as dtparser
 from dotenv import load_dotenv
 from tocify.frontmatter import aggregate_ranked_item_tags, with_frontmatter
+from tocify.utils import sha1
 
 load_dotenv()
 
@@ -42,7 +42,7 @@ def load_feeds(path: str) -> list[dict]:
     """
     feeds = []
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             s = line.strip()
             if not s or s.startswith("#"):
@@ -63,13 +63,8 @@ def load_feeds(path: str) -> list[dict]:
 
 def read_text(path: str) -> str:
     """Read and return the entire contents of a text file."""
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return f.read()
-
-
-def sha1(s: str) -> str:
-    """Return SHA-1 hex digest of the string."""
-    return hashlib.sha1(s.encode("utf-8")).hexdigest()
 
 
 def section(md: str, heading: str) -> str:
@@ -92,6 +87,13 @@ def parse_interests_md(md: str) -> dict:
     if len(narrative) > INTERESTS_MAX_CHARS:
         narrative = narrative[:INTERESTS_MAX_CHARS] + "…"
     return {"keywords": keywords[:200], "narrative": narrative}
+
+
+def topic_search_string(interests: dict, max_keywords: int = 5) -> str:
+    """Build a single search string from interests keywords for OpenAlex/NewsAPI queries. Uses first max_keywords (default 5) joined by spaces."""
+    keywords = interests.get("keywords") or []
+    taken = [k.strip() for k in keywords[:max_keywords] if k and str(k).strip()]
+    return " ".join(taken) if taken else ""
 
 
 # ---- rss ----
@@ -187,6 +189,20 @@ def fetch_rss_items(feeds: list[dict], end_date: date | None = None) -> list[dic
     items = list({it["id"]: it for it in items}.values())
     items.sort(key=lambda x: x["published_utc"] or "", reverse=True)
     return items[:MAX_TOTAL_ITEMS]
+
+
+def merge_feed_items(*item_lists: list[dict], max_items: int | None = None) -> list[dict]:
+    """Merge multiple lists of feed items (same schema: id, source, title, link, published_utc, summary). Dedupe by id, sort newest first."""
+    seen: dict[str, dict] = {}
+    for lst in item_lists:
+        for it in lst:
+            iid = it.get("id")
+            if iid and iid not in seen:
+                seen[iid] = it
+    out = sorted(seen.values(), key=lambda x: x.get("published_utc") or "", reverse=True)
+    if max_items is not None:
+        out = out[:max_items]
+    return out
 
 
 # ---- local prefilter ----
@@ -305,6 +321,21 @@ def main():
     feeds = load_feeds("feeds.txt")
     items = fetch_rss_items(feeds)
     print(f"Fetched {len(items)} RSS items (pre-filter)")
+
+    # Optional news backend for present flow (same date window as RSS)
+    news_backend = (os.getenv("NEWS_BACKEND") or "").strip().lower()
+    if news_backend == "newsapi":
+        now = datetime.now(timezone.utc)
+        end_dt = now
+        start_dt = end_dt - timedelta(days=LOOKBACK_DAYS)
+        try:
+            from tocify.news import fetch_news_items as fetch_news
+            news_items = fetch_news(start_dt.date(), end_dt.date())
+            if news_items:
+                items = merge_feed_items(items, news_items, max_items=MAX_TOTAL_ITEMS)
+                print(f"Added {len(news_items)} news items (merged total {len(items)})")
+        except Exception as e:
+            tqdm.write(f"[WARN] News backend failed: {e}")
     triage_metadata = {"triage_backend": "unknown", "triage_model": "unknown"}
     try:
         from tocify.integrations import get_triage_runtime_metadata

@@ -42,6 +42,7 @@ def _load_weekly_module():
         }
     ]
     tocify_mod.keyword_prefilter = lambda items, _keywords, keep_top=200: items
+    tocify_mod.topic_search_string = lambda interests=None, max_keywords=5: ""
     tocify_mod.get_triage_backend_with_metadata = lambda: (
         lambda *_args, **_kwargs: None,
         {"triage_backend": "openai", "triage_model": "gpt-4o"},
@@ -67,9 +68,13 @@ def _load_weekly_module():
     assert lh_spec and lh_spec.loader
     lh_spec.loader.exec_module(link_hygiene_mod)
 
+    clear_mod = types.ModuleType("tocify.runner.clear")
+    clear_mod.clean_stray_action_json_in_logs = lambda *args, **kwargs: 0
+
     sys.modules["tocify"] = tocify_mod
     sys.modules["tocify.runner"] = runner_mod
     sys.modules["tocify.runner.vault"] = vault_mod
+    sys.modules["tocify.runner.clear"] = clear_mod
     sys.modules["tocify.runner.link_hygiene"] = link_hygiene_mod
     sys.modules["tocify.frontmatter"] = frontmatter_mod
     sys.modules["dotenv"] = dotenv_mod

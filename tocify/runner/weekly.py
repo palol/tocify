@@ -5,7 +5,6 @@ import json
 import os
 import re
 import sys
-import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
@@ -31,6 +30,7 @@ from tocify.runner.link_hygiene import (
     normalize_url_for_match,
     sanitize_markdown_links,
 )
+from tocify.runner.clear import clean_stray_action_json_in_logs
 from tocify.runner.vault import VAULT_ROOT, get_topic_paths, run_structured_prompt
 from tocify.runner._utils import string_list as _string_list
 
@@ -82,7 +82,7 @@ def load_briefs_articles_urls(csv_path: Path, topic: str | None = None) -> set[s
     seen = set()
     if not csv_path.exists():
         return seen
-    with open(csv_path, "r", newline="", encoding="utf-8") as f:
+    with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames or []
         if "url" not in fieldnames:
@@ -102,7 +102,7 @@ def load_brief_link_rows(csv_path: Path, brief_filename: str) -> list[dict]:
     rows: list[dict] = []
     if not csv_path.exists():
         return rows
-    with open(csv_path, "r", newline="", encoding="utf-8") as f:
+    with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames or []
         if "brief_filename" not in fieldnames or "url" not in fieldnames:
@@ -719,7 +719,7 @@ def _attach_sources_to_bullets(
     url_to_idx = {url: idx for idx, url in updated_defs.items()}
     lines: list[str] = []
     used_sources: list[str] = []
-    for bullet, source_url in zip(summary_bullets, bullet_sources):
+    for bullet, source_url in zip(summary_bullets, bullet_sources, strict=True):
         clean_bullet = FOOTNOTE_MARKER_RE.sub("", bullet).strip()
         source = str(source_url or "").strip()
         if not source:
@@ -1255,11 +1255,11 @@ def _load_weekly_link_resolver():
 
         _weekly_link_resolver_fn = resolve_weekly_heading_links
         return _weekly_link_resolver_fn
-    except Exception:
+    except Exception as err:
         module_path = Path(__file__).resolve().with_name("link_resolution.py")
         spec = importlib.util.spec_from_file_location("tocify_runner_link_resolution_runtime", module_path)
         if spec is None or spec.loader is None:
-            raise RuntimeError(f"Failed to load link resolver module at {module_path}")
+            raise RuntimeError(f"Failed to load link resolver module at {module_path}") from err
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         _weekly_link_resolver_fn = module.resolve_weekly_heading_links
@@ -1360,20 +1360,46 @@ def run_weekly(
 
     interests = tocify.parse_interests_md(paths.interests_path.read_text(encoding="utf-8"))
     feeds = tocify.load_feeds(str(paths.feeds_path))
+    topic_search = tocify.topic_search_string(interests)
 
     if week_spec is not None:
         week_of = parse_week_spec(week_spec)
-        end_date = datetime.strptime(week_of, "%Y-%m-%d").date()
+        week_start = datetime.strptime(week_of, "%Y-%m-%d").date()
+        week_end = week_start + timedelta(days=6)
     else:
         today = datetime.now(timezone.utc).date()
         week_of = date.fromisocalendar(
             today.isocalendar()[0], today.isocalendar()[1], 1
         ).isoformat()
-        end_date = None
+        week_start = today - timedelta(days=LOOKBACK_DAYS)
+        week_end = today
     triage_metadata = tocify.get_triage_runtime_metadata()
 
-    items = tocify.fetch_rss_items(feeds, end_date=end_date)
+    items = tocify.fetch_rss_items(feeds, end_date=week_end if week_spec is not None else None)
     print(f"Fetched {len(items)} RSS items (pre-filter) [topic={topic}]")
+
+    # OpenAlex and/or NewsAPI for this week's date range (current or past); topic-derived search
+    weekly_openalex = (os.getenv("WEEKLY_OPENALEX", "1") or "").strip().lower() in ("1", "true", "yes")
+    news_backend = (os.getenv("NEWS_BACKEND") or "").strip().lower()
+    backends = []
+    if weekly_openalex:
+        backends.append("openalex")
+    if news_backend == "newsapi":
+        backends.append("newsapi")
+    if backends:
+        try:
+            extra = tocify.fetch_historical_items(
+                week_start,
+                week_end,
+                backends=backends,
+                openalex_search=topic_search or None,
+                news_query=topic_search or None,
+            )
+            if extra:
+                items = tocify.merge_feed_items(items, extra, max_items=MAX_TOTAL_ITEMS)
+                print(f"Added {len(extra)} items from {','.join(backends)} (merged total {len(items)}) [topic={topic}]")
+        except Exception as e:
+            tqdm.write(f"[WARN] Weekly fetch (openalex/news) failed: {e}")
 
     paths.briefs_dir.mkdir(parents=True, exist_ok=True)
     brief_filename = f"{week_of}_{topic}_weekly-brief.md"
@@ -1602,3 +1628,4 @@ def run_weekly(
             allowed_source_url_index=_build_allowed_source_url_index(kept_items_for_sources),
             existing_topics=topic_data[1] if topic_data else None,
         )
+        clean_stray_action_json_in_logs(paths.logs_dir, f"topic_actions_{week_of}_{topic}.json")

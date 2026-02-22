@@ -41,9 +41,13 @@ def _load_weekly_module():
     assert lh_spec and lh_spec.loader
     lh_spec.loader.exec_module(link_hygiene_mod)
 
+    clear_mod = types.ModuleType("tocify.runner.clear")
+    clear_mod.clean_stray_action_json_in_logs = lambda *args, **kwargs: 0
+
     sys.modules.setdefault("tocify", tocify_mod)
     sys.modules.setdefault("tocify.runner", runner_mod)
     sys.modules["tocify.runner.vault"] = vault_mod
+    sys.modules["tocify.runner.clear"] = clear_mod
     sys.modules["tocify.runner.link_hygiene"] = link_hygiene_mod
     sys.modules["tocify.frontmatter"] = frontmatter_mod
     sys.modules.setdefault("dotenv", dotenv_mod)

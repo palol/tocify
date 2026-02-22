@@ -42,7 +42,7 @@ def load_prompt_template(path: str | None = None) -> str:
         path = os.getenv("TOCIFY_PROMPT_PATH", "prompt.txt")
     if not os.path.exists(path):
         raise RuntimeError(f"Prompt file not found: {path}")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return f.read()
 
 

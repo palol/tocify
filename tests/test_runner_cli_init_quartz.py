@@ -30,6 +30,8 @@ def _load_cli_module():
 
     clear_mod = types.ModuleType("tocify.runner.clear")
     clear_mod.main = lambda *args, **kwargs: None
+    clear_mod.clean_action_json = lambda *args, **kwargs: 0
+    clear_mod.find_stray_action_json = lambda *args, **kwargs: []
 
     quartz_mod = types.ModuleType("tocify.runner.quartz_init")
     quartz_mod.DEFAULT_QUARTZ_REF = "v4"
