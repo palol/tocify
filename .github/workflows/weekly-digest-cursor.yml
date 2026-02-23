@@ -2,6 +2,9 @@ name: Weekly ToC Digest (Cursor)
 
 on:
   workflow_dispatch:
+  # Example weekly schedule for forks (disabled in this repo):
+  # schedule:
+  #   - cron: "0 9 * * 1" # Mondays 09:00 UTC
 
 permissions:
   contents: write

@@ -14,7 +14,7 @@ for key in list(sys.modules):
     if key == "tocify" or key.startswith("tocify."):
         del sys.modules[key]
 
-from datetime import date, datetime, timezone
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 

@@ -11,22 +11,24 @@ import requests
 from tqdm import tqdm
 from dateutil import parser as dtparser
 from dotenv import load_dotenv
+from tocify.config import env_int, load_pipeline_config
 from tocify.frontmatter import aggregate_ranked_item_tags, with_frontmatter
 from tocify.utils import sha1
 
 load_dotenv()
 
 # ---- config (env-tweakable) ----
-MAX_ITEMS_PER_FEED = int(os.getenv("MAX_ITEMS_PER_FEED", "50"))
-MAX_TOTAL_ITEMS = int(os.getenv("MAX_TOTAL_ITEMS", "400"))
-LOOKBACK_DAYS = int(os.getenv("LOOKBACK_DAYS", "7"))
-INTERESTS_MAX_CHARS = int(os.getenv("INTERESTS_MAX_CHARS", "3000"))
-SUMMARY_MAX_CHARS = int(os.getenv("SUMMARY_MAX_CHARS", "500"))
-PREFILTER_KEEP_TOP = int(os.getenv("PREFILTER_KEEP_TOP", "200"))
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "50"))
-MIN_SCORE_READ = float(os.getenv("MIN_SCORE_READ", "0.65"))
-MAX_RETURNED = int(os.getenv("MAX_RETURNED", "40"))
-RSS_FETCH_TIMEOUT = int(os.getenv("RSS_FETCH_TIMEOUT", "25"))
+PIPELINE_CONFIG = load_pipeline_config()
+MAX_ITEMS_PER_FEED = PIPELINE_CONFIG.max_items_per_feed
+MAX_TOTAL_ITEMS = PIPELINE_CONFIG.max_total_items
+LOOKBACK_DAYS = PIPELINE_CONFIG.lookback_days
+SUMMARY_MAX_CHARS = PIPELINE_CONFIG.summary_max_chars
+PREFILTER_KEEP_TOP = PIPELINE_CONFIG.prefilter_keep_top
+BATCH_SIZE = PIPELINE_CONFIG.batch_size
+MIN_SCORE_READ = PIPELINE_CONFIG.min_score_read
+MAX_RETURNED = PIPELINE_CONFIG.max_returned
+INTERESTS_MAX_CHARS = env_int("INTERESTS_MAX_CHARS", 3000)
+RSS_FETCH_TIMEOUT = env_int("RSS_FETCH_TIMEOUT", 25)
 
 
 # ---- tiny helpers ----
@@ -211,10 +213,7 @@ def fetch_rss_items(feeds: list[dict], end_date: date | None = None) -> list[dic
     if not feeds:
         return []
     timeout = RSS_FETCH_TIMEOUT
-    max_workers = min(
-        int(os.getenv("RSS_FETCH_MAX_WORKERS", "10")),
-        len(feeds),
-    )
+    max_workers = min(env_int("RSS_FETCH_MAX_WORKERS", 10), len(feeds))
     max_workers = max(1, max_workers)
     items: list[dict] = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:

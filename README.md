@@ -1,6 +1,6 @@
 # tocify — Weekly Journal ToC Digest (RSS → triage → `digest.md`)
 
-This repo runs a GitHub Action once a week (or on-demand) that:
+This repo runs GitHub Actions on-demand (manual dispatch by default) that:
 
 1. pulls new items from a list of journal RSS feeds  
 2. triages items against your research interests (OpenAI API, Gemini API, or Cursor CLI)  
@@ -18,7 +18,7 @@ It’s meant to be forked and customized.
 - **`interests.md`** — keywords + narrative (used for relevance)
 - **`prompt.txt`** — prompt template (used by OpenAI, Gemini, and Cursor backends)
 - **`digest.md`** — generated output (auto-updated)
-- **`.github/workflows/weekly-digest.yml`** — scheduled GitHub Action
+- **`.github/workflows/weekly-digest.yml`** — manual GitHub Action (with commented weekly schedule examples)
 - **`requirements.txt`** — Python dependencies
 - **`.python-version`** — pinned Python version (used by uv, pyenv, etc.)
 
@@ -169,5 +169,7 @@ Beyond RSS and OpenAlex/NewsAPI/Google News, the weekly runner can pull from neu
 
 **Automation notes**
 
-- `.github/workflows/weekly-runner.yml` runs `tocify.runner` weekly when runner config files exist. The workflow supports **OpenAI** (secret `OPENAI_API_KEY`) or **Cursor CLI** (secret `CURSOR_API_KEY`); if both are set, OpenAI is used. For Cursor, the workflow installs the Cursor CLI in the runner environment.
+- This repository keeps workflows manual (`workflow_dispatch`) so no weekly jobs trigger automatically here.
+- Each workflow includes commented `schedule` examples that forks can enable for weekly automation.
+- `.github/workflows/weekly-runner.yml` runs `tocify.runner` when dispatched and runner config files exist. It supports **OpenAI** (secret `OPENAI_API_KEY`) or **Cursor CLI** (secret `CURSOR_API_KEY`); if both are set, OpenAI is used. For Cursor, the workflow installs the Cursor CLI in the runner environment.
 - Legacy digest workflows (`weekly-digest.yml`, `weekly-digest-cursor.yml`) run `digest.py` only; they do not invoke runner gardener.

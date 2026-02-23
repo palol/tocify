@@ -9,19 +9,30 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 
+import tocify
 from dotenv import load_dotenv
 from newspaper import Article
 from tqdm import tqdm
 
-import tocify
-import importlib.util
-
+from tocify.config import env_bool, env_int, load_pipeline_config
 from tocify.frontmatter import (
-    aggregate_ranked_item_tags,
     normalize_ai_tags,
     split_frontmatter_and_body,
     with_frontmatter,
 )
+from tocify.runner.brief_writer import (
+    build_allowed_url_index_from_link_rows as _build_allowed_url_index_from_link_rows,
+    build_weekly_allowed_url_index as _build_weekly_allowed_url_index,
+    build_weekly_link_metadata_rows as _build_weekly_link_metadata_rows,
+    merge_brief_frontmatter as _merge_brief_frontmatter,
+    parse_brief_body_into_header_and_entries as _parse_brief_body_into_header_and_entries,
+    render_brief_entry_blocks as _render_brief_entry_blocks,
+    render_brief_md,
+    resolve_weekly_heading_links as _resolve_weekly_heading_links,
+    update_brief_header_counts as _update_brief_header_counts,
+    weekly_brief_title as _weekly_brief_title,
+)
+from tocify.runner.clear import clean_stray_action_json_in_logs
 from tocify.runner.link_hygiene import (
     _dedupe_urls,
     build_allowed_url_index,
@@ -30,29 +41,29 @@ from tocify.runner.link_hygiene import (
     normalize_url_for_match,
     sanitize_markdown_links,
 )
-from tocify.runner.clear import clean_stray_action_json_in_logs
-from tocify.runner.vault import VAULT_ROOT, get_topic_paths, run_structured_prompt
 from tocify.runner._utils import string_list as _string_list
+from tocify.runner.vault import VAULT_ROOT, get_topic_paths, run_structured_prompt
 
 load_dotenv()
 
 # Env (same names as neural-noise / tocify)
-MAX_ITEMS_PER_FEED = int(os.getenv("MAX_ITEMS_PER_FEED", "50"))
-MAX_TOTAL_ITEMS = int(os.getenv("MAX_TOTAL_ITEMS", "400"))
-LOOKBACK_DAYS = int(os.getenv("LOOKBACK_DAYS", "7"))
-SUMMARY_MAX_CHARS = int(os.getenv("SUMMARY_MAX_CHARS", "500"))
-PREFILTER_KEEP_TOP = int(os.getenv("PREFILTER_KEEP_TOP", "200"))
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "50"))
-MIN_SCORE_READ = float(os.getenv("MIN_SCORE_READ", "0.65"))
-MAX_RETURNED = int(os.getenv("MAX_RETURNED", "40"))
-USE_NEWSPAPER = os.getenv("USE_NEWSPAPER", "0").strip().lower() in ("1", "true", "yes")
-NEWSPAPER_MAX_ITEMS = int(os.getenv("NEWSPAPER_MAX_ITEMS", "100"))
-NEWSPAPER_TIMEOUT = int(os.getenv("NEWSPAPER_TIMEOUT", "10"))
-NEWSPAPER_MAX_WORKERS = max(1, min(int(os.getenv("NEWSPAPER_MAX_WORKERS", "3")), 10))
-TOPIC_REDUNDANCY_ENABLED = os.getenv("TOPIC_REDUNDANCY", "1").strip().lower() in ("1", "true", "yes")
-TOPIC_REDUNDANCY_LOOKBACK_DAYS = int(os.getenv("TOPIC_REDUNDANCY_LOOKBACK_DAYS", "56"))
-TOPIC_REDUNDANCY_BATCH_SIZE = int(os.getenv("TOPIC_REDUNDANCY_BATCH_SIZE", "25"))
-TOPIC_GARDENER_ENABLED = os.getenv("TOPIC_GARDENER", "1").strip().lower() in ("1", "true", "yes")
+PIPELINE_CONFIG = load_pipeline_config()
+MAX_ITEMS_PER_FEED = PIPELINE_CONFIG.max_items_per_feed
+MAX_TOTAL_ITEMS = PIPELINE_CONFIG.max_total_items
+LOOKBACK_DAYS = PIPELINE_CONFIG.lookback_days
+SUMMARY_MAX_CHARS = PIPELINE_CONFIG.summary_max_chars
+PREFILTER_KEEP_TOP = PIPELINE_CONFIG.prefilter_keep_top
+BATCH_SIZE = PIPELINE_CONFIG.batch_size
+MIN_SCORE_READ = PIPELINE_CONFIG.min_score_read
+MAX_RETURNED = PIPELINE_CONFIG.max_returned
+USE_NEWSPAPER = env_bool("USE_NEWSPAPER", False)
+NEWSPAPER_MAX_ITEMS = env_int("NEWSPAPER_MAX_ITEMS", 100)
+NEWSPAPER_TIMEOUT = env_int("NEWSPAPER_TIMEOUT", 10)
+NEWSPAPER_MAX_WORKERS = max(1, min(env_int("NEWSPAPER_MAX_WORKERS", 3), 10))
+TOPIC_REDUNDANCY_ENABLED = env_bool("TOPIC_REDUNDANCY", True)
+TOPIC_REDUNDANCY_LOOKBACK_DAYS = env_int("TOPIC_REDUNDANCY_LOOKBACK_DAYS", 56)
+TOPIC_REDUNDANCY_BATCH_SIZE = env_int("TOPIC_REDUNDANCY_BATCH_SIZE", 25)
+TOPIC_GARDENER_ENABLED = env_bool("TOPIC_GARDENER", True)
 
 BRIEFS_ARTICLES_COLUMNS = [
     "topic", "week_of", "url", "title", "source", "published_utc", "score", "brief_filename",
@@ -1127,203 +1138,6 @@ def run_topic_gardener(
         tqdm.write(f"Topic gardener: applied {applied} topic action(s) under {topics_dir}")
 
 
-def _weekly_brief_title(topic: str, week_of: str) -> str:
-    """Canonical title for a weekly brief (body H1 and frontmatter)."""
-    return f"{topic.upper()} Weekly Brief (week of {week_of})"
-
-
-def render_brief_md(
-    result: dict, items_by_id: dict[str, dict], kept: list[dict], topic: str
-) -> str:
-    """Render triage result and kept items to weekly brief markdown with frontmatter."""
-    week_of = result["week_of"]
-    notes = result.get("notes", "").strip()
-    ranked = result.get("ranked", [])
-    today = datetime.now(timezone.utc).date().isoformat()
-    title = _weekly_brief_title(topic, week_of)
-    triage_backend = str(result.get("triage_backend") or "unknown")
-    triage_model = str(result.get("triage_model") or "unknown")
-
-    lines = [f"# {title}", ""]
-    if notes:
-        lines += [notes, ""]
-    lines += [
-        f"**Included:** {len(kept)} (score ≥ {MIN_SCORE_READ:.2f})  ",
-        f"**Scored:** {len(ranked)} total items",
-        "",
-        "---",
-        "",
-    ]
-    if not kept:
-        return "\n".join(lines + ["_No items met the relevance threshold this week._", ""])
-
-    for r in kept:
-        it = items_by_id.get(r["id"], {})
-        tags = ", ".join(r.get("tags", [])) if r.get("tags") else ""
-        pub = r.get("published_utc")
-        summary = (it.get("summary") or "").strip()
-        lines += [
-            f"## [{r['title']}]({r['link']})",
-            f"*{r['source']}*  ",
-            f"Score: **{r['score']:.2f}**" + (f"  \nPublished: {pub}" if pub else ""),
-            (f"Tags: {tags}" if tags else ""),
-            "",
-            (r.get("why") or "").strip(),
-            "",
-        ]
-        if summary:
-            lines += ["<details>", "<summary>RSS summary</summary>", "", summary, "", "</details>", ""]
-        lines += ["---", ""]
-    body = "\n".join(lines)
-    frontmatter = {
-        "title": title,
-        "date": week_of,
-        "lastmod": today,
-        "tags": aggregate_ranked_item_tags(kept if kept else ranked),
-        "generator": "tocify-weekly",
-        "period": "weekly",
-        "topic": topic,
-        "week_of": week_of,
-        "included": len(kept),
-        "scored": len(ranked),
-        "triage_backend": triage_backend,
-        "triage_model": triage_model,
-    }
-    return with_frontmatter(body, frontmatter)
-
-
-# Used when merging new entries into an existing brief (update header counts)
-BRIEF_HEADER_INCLUDED_RE = re.compile(r"(\*\*Included:\*\*\s*)\d+")
-BRIEF_HEADER_SCORED_RE = re.compile(r"(\*\*Scored:\*\*\s*)\d+")
-
-
-def _parse_brief_body_into_header_and_entries(body: str) -> tuple[str, list[str]]:
-    """Split brief body into header (up to first ---) and list of entry blocks. New entries append after these."""
-    if not body or "\n---\n" not in body:
-        return body.strip(), []
-    parts = body.split("\n---\n")
-    header = (parts[0] or "").strip()
-    entry_blocks = [(p or "").strip() for p in parts[1:] if (p or "").strip()]
-    return header, entry_blocks
-
-
-def _update_brief_header_counts(header: str, merged_included: int, merged_scored: int) -> str:
-    """Replace **Included:** N and **Scored:** M in header with merged counts (deterministic)."""
-    header = BRIEF_HEADER_INCLUDED_RE.sub(rf"\g<1>{merged_included}", header)
-    header = BRIEF_HEADER_SCORED_RE.sub(rf"\g<1>{merged_scored}", header)
-    return header
-
-
-def _render_brief_entry_blocks(kept: list[dict], items_by_id: dict[str, dict]) -> str:
-    """Render only the entry blocks (## title, source, score, ... ---) for given kept items. Same format as render_brief_md."""
-    lines: list[str] = []
-    for r in kept:
-        it = items_by_id.get(r["id"], {})
-        tags = ", ".join(r.get("tags", [])) if r.get("tags") else ""
-        pub = r.get("published_utc")
-        summary = (it.get("summary") or "").strip()
-        lines += [
-            f"## [{r['title']}]({r['link']})",
-            f"*{r['source']}*  ",
-            f"Score: **{r['score']:.2f}**" + (f"  \nPublished: {pub}" if pub else ""),
-            (f"Tags: {tags}" if tags else ""),
-            "",
-            (r.get("why") or "").strip(),
-            "",
-        ]
-        if summary:
-            lines += ["<details>", "<summary>RSS summary</summary>", "", summary, "", "</details>", ""]
-        lines += ["---", ""]
-    return "\n".join(lines)
-
-
-def _merge_brief_frontmatter(
-    existing_frontmatter: dict,
-    new_kept: list[dict],
-    new_ranked: list,
-    merged_included: int,
-    merged_scored: int,
-) -> dict:
-    """Update frontmatter for merge: deterministic rules only. Other keys copied from existing."""
-    merged = dict(existing_frontmatter)
-    merged["included"] = merged_included
-    merged["scored"] = merged_scored
-    merged["lastmod"] = datetime.now(timezone.utc).date().isoformat()
-    existing_tags = normalize_ai_tags(_string_list(existing_frontmatter.get("tags")))
-    new_tags = aggregate_ranked_item_tags(new_kept) if new_kept else []
-    combined = _merge_unique(existing_tags + new_tags)
-    merged["tags"] = sorted(normalize_ai_tags(combined))
-    return merged
-
-
-def _build_allowed_url_index_from_link_rows(link_rows: list[dict]) -> dict[str, str]:
-    """Build allowed URL index from link metadata rows (for merge path)."""
-    urls = [str(r.get("url") or "").strip() for r in link_rows if r.get("url")]
-    return build_allowed_url_index(urls)
-
-
-_weekly_link_resolver_fn = None
-
-
-def _load_weekly_link_resolver():
-    """Load and cache the weekly heading link resolver (once per process)."""
-    global _weekly_link_resolver_fn
-    if _weekly_link_resolver_fn is not None:
-        return _weekly_link_resolver_fn
-    try:
-        from tocify.runner.link_resolution import resolve_weekly_heading_links
-
-        _weekly_link_resolver_fn = resolve_weekly_heading_links
-        return _weekly_link_resolver_fn
-    except Exception as err:
-        module_path = Path(__file__).resolve().with_name("link_resolution.py")
-        spec = importlib.util.spec_from_file_location("tocify_runner_link_resolution_runtime", module_path)
-        if spec is None or spec.loader is None:
-            raise RuntimeError(f"Failed to load link resolver module at {module_path}") from err
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        _weekly_link_resolver_fn = module.resolve_weekly_heading_links
-        return _weekly_link_resolver_fn
-
-
-def _build_weekly_link_metadata_rows(
-    brief_filename: str, kept: list[dict], items_by_id: dict[str, dict]
-) -> list[dict]:
-    rows: list[dict] = []
-    for ranked in kept:
-        item = items_by_id.get(ranked.get("id"), {})
-        title = str(ranked.get("title") or item.get("title") or "").strip()
-        if not title:
-            continue
-        canonical_url = str(item.get("link") or "").strip()
-        if not is_valid_http_url(canonical_url):
-            continue
-        rows.append(
-            {
-                "brief_filename": brief_filename,
-                "title": title,
-                "url": canonical_url,
-            }
-        )
-    return rows
-
-
-def _resolve_weekly_heading_links(md: str, brief_filename: str, rows: list[dict]) -> tuple[str, dict]:
-    """Canonicalize ## [Title](url) links in brief markdown using per-brief metadata rows."""
-    resolver = _load_weekly_link_resolver()
-    return resolver(md, brief_filename, rows)
-
-
-def _build_weekly_allowed_url_index(kept: list[dict], items_by_id: dict[str, dict]) -> dict[str, str]:
-    canonical_urls: list[str] = []
-    for ranked in kept:
-        item = items_by_id.get(ranked.get("id"), {})
-        link = str(item.get("link") or "").strip()
-        if link:
-            canonical_urls.append(link)
-    return build_allowed_url_index(canonical_urls)
-
-
 def append_briefs_articles(
     csv_path: Path,
     topic: str,
@@ -1399,12 +1213,12 @@ def run_weekly(
     print(f"Fetched {len(items)} RSS items (pre-filter) [topic={topic}]")
 
     # OpenAlex and/or NewsAPI and/or Google News and/or ClinicalTrials/EDGAR/newsrooms for this week's date range
-    weekly_openalex = (os.getenv("WEEKLY_OPENALEX", "1") or "").strip().lower() in ("1", "true", "yes")
+    weekly_openalex = env_bool("WEEKLY_OPENALEX", True)
     news_backend = (os.getenv("NEWS_BACKEND") or "").strip().lower()
-    add_google_news = (os.getenv("ADD_GOOGLE_NEWS") or "").strip().lower() in ("1", "true", "yes")
-    add_clinical_trials = (os.getenv("ADD_CLINICAL_TRIALS") or "").strip().lower() in ("1", "true", "yes")
-    add_edgar = (os.getenv("ADD_EDGAR") or "").strip().lower() in ("1", "true", "yes")
-    add_newsrooms = (os.getenv("ADD_NEWSROOMS") or "").strip().lower() in ("1", "true", "yes")
+    add_google_news = env_bool("ADD_GOOGLE_NEWS", False)
+    add_clinical_trials = env_bool("ADD_CLINICAL_TRIALS", False)
+    add_edgar = env_bool("ADD_EDGAR", False)
+    add_newsrooms = env_bool("ADD_NEWSROOMS", False)
     backends = []
     if weekly_openalex and (topic_search or "").strip():
         backends.append("openalex")
@@ -1601,7 +1415,7 @@ def run_weekly(
         else:
             merged_body = header + "\n---\n\n" + new_entries_md
         merged_frontmatter = _merge_brief_frontmatter(
-            existing_frontmatter, kept, ranked, merged_included, merged_scored
+            existing_frontmatter, kept, merged_included, merged_scored
         )
         existing_link_rows = load_brief_link_rows(paths.briefs_articles_csv, brief_filename)
         new_link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
@@ -1633,7 +1447,7 @@ def run_weekly(
         brief_path.write_text(md, encoding="utf-8")
         print(f"Merged {len(kept)} new entries into {brief_path}")
     else:
-        md = render_brief_md(result, items_by_id, kept, topic)
+        md = render_brief_md(result, items_by_id, kept, topic, min_score_read=MIN_SCORE_READ)
         allowed_heading_url_index = _build_weekly_allowed_url_index(kept, items_by_id)
         link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
         try:
