@@ -492,6 +492,7 @@ TOPIC_GARDENER_SCHEMA = {
                     "links_to",
                     "append_sources",
                     "summary_addendum",
+                    "summary_addendum_sources",
                     "tags",
                 ],
                 "additionalProperties": False,
