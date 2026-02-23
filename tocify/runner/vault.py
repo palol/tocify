@@ -579,16 +579,21 @@ def run_agent_and_save_output(
                 final_output = output_path.read_text(encoding="utf-8")
             except OSError:
                 final_output = ""
+            if final_output and not final_output.endswith("\n"):
+                final_output += "\n"
+                output_path.write_text(final_output, encoding="utf-8")
         else:
-            final_output = fallback_content
+            final_output = fallback_content if fallback_content.endswith("\n") else fallback_content + "\n"
             output_path.write_text(final_output, encoding="utf-8")
     else:
-        final_output = response_text
+        final_output = response_text if response_text.endswith("\n") else response_text + "\n"
         output_path.write_text(final_output, encoding="utf-8")
 
-    from tocify.markdown_lint import lint_file
-
-    lint_file(output_path)
+    try:
+        from tocify.markdown_lint import lint_file
+        lint_file(output_path)
+    except ModuleNotFoundError:
+        pass  # skip lint when vault is loaded in isolation (e.g. tests)
 
     log_path.write_text(
         _build_prompt_log(result, final_output, used_fallback, preserved_agent_file),

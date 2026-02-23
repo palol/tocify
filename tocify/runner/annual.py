@@ -22,19 +22,21 @@ ANNUAL_REVIEW_PROMPT_TEMPLATE = """You are helping an expert analyst prepare an 
 
 **Use the Minto Pyramid Principle: structure the review to lead with the main conclusions and storylines of the year, then organize supporting information hierarchically.**
 
+Return only the **markdown body** of the review (no YAML frontmatter). We will add frontmatter and save the file.
+Your response must be the **final annual review article**—ready to publish. Do not output a plan, outline, or description of what you will write.
+Do not use meta-language (e.g. "I will…", "This section will…"). Write the review itself: concrete conclusions, events, and storylines drawn only from the monthly roundups.
+
 Generate an annual review for the year {year}. Use only the following monthly roundups as your source. Do not invent content.
 
 Monthly roundups (in chronological order):
 {roundup_refs}
 
-**IMPORTANT: Write the review to the following file path: {output_file_path}**
-
 Format the review as follows:
 1. Title: e.g. "# {topic_upper} Annual Review — {year}" and a date range subtitle
-2. "## Introduction" — 2–4 paragraphs with the year's main conclusions and storylines.
-3. "## Timelines" — Chronological narrative or month-by-month highlights.
-4. "## Trends" — Thematic arcs across the year. Use subheadings if helpful.
-5. Optional: "## Suggested Titles" — 3–5 possible newsletter titles.
+2. "## Introduction" — 2–4 full paragraphs with the year's main conclusions and storylines (no placeholders).
+3. "## Timelines" — Chronological narrative or month-by-month highlights with real events from the roundups.
+4. "## Trends" — Thematic arcs across the year with real content; use subheadings if helpful—not a list of "we could cover X, Y."
+5. Optional: "## Suggested Titles" — 3–5 concrete newsletter title options (real phrases, not a description).
 
 Keep content comprehensive but polished. Use only information from the attached roundups."""
 
@@ -97,7 +99,6 @@ def main(
     prompt = ANNUAL_REVIEW_PROMPT_TEMPLATE.format(
         year=year,
         roundup_refs=roundup_refs,
-        output_file_path=str(output_path),
         topic_upper=topic.upper(),
     )
 

@@ -425,11 +425,13 @@ TOPIC_GARDENER_PROMPT = """You are curating a **global digital garden** of everg
 
 Below are (1) this week's weekly brief, and (2) existing topic files. Propose **create** or **update** actions.
 
+Return only the JSON object; we will create or update topic files from it. Do not write to any file path.
+
 Rules:
 - **create**: New topic when the brief introduces a distinct theme. Use lowercase-hyphen slug. Include title, body_markdown, sources, links_to, tags.
-  - `body_markdown` must be a **fact bullet list** (`- Fact...`), not prose paragraphs.
+  - `body_markdown` must be a **fact bullet list** (`- Fact...`), not prose paragraphs. Write the actual fact bullets drawn from the brief, not a description of what to add.
 - **update**: Only when the brief adds genuinely new knowledge to an existing topic. Provide slug, append_sources, optionally summary_addendum, summary_addendum_sources, and tags.
-  - `summary_addendum` must be a **fact bullet list** (`- Fact...`) when present.
+  - `summary_addendum` must be a **fact bullet list** (`- Fact...`) when present. Write the actual fact bullets, not a description of what to add.
 - Each bullet in `summary_addendum` must map to exactly one source URL in `summary_addendum_sources` (same order, same length).
 - Use source attribution with markdown footnotes, e.g. [^1] and [^1]: https://example.com.
 - If no new knowledge is present, do not emit an update action.
