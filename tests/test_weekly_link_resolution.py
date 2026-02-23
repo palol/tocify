@@ -22,6 +22,8 @@ def _load_weekly_module():
             briefs_dir=root / "content" / "briefs",
             logs_dir=root / "content" / "logs",
             briefs_articles_csv=root / "content" / "briefs_articles.csv",
+            edgar_ciks_path=root / "config" / f"edgar_ciks.{topic}.txt",
+            newsrooms_path=root / "config" / f"newsrooms.{topic}.txt",
         )
 
     vault_mod.get_topic_paths = get_topic_paths
@@ -41,7 +43,7 @@ def _load_weekly_module():
             "summary": "Summary A",
         }
     ]
-    tocify_mod.keyword_prefilter = lambda items, _keywords, keep_top=200: items
+    tocify_mod.keyword_prefilter = lambda items, _keywords, keep_top=200, companies=None, **kwargs: items
     tocify_mod.topic_search_string = lambda interests=None, max_keywords=5: ""
     tocify_mod.get_triage_backend_with_metadata = lambda: (
         lambda *_args, **_kwargs: None,

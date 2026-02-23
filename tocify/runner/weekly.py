@@ -1,4 +1,4 @@
-"""Weekly digest for one topic: fetch (tocify), prefilter, triage, topic redundancy, gardener, brief + CSV."""
+"""Weekly digest for one topic: fetch (tocify), prefilter, topic redundancy, triage, gardener, brief + CSV."""
 
 import csv
 import json
@@ -429,12 +429,16 @@ Return only the JSON object; we will create or update topic files from it. Do no
 
 Rules:
 - **create**: New topic when the brief introduces a distinct theme. Use lowercase-hyphen slug. Include title, body_markdown, sources, links_to, tags.
+  - When the brief mentions a **tracked company** (see list below), prefer creating a topic page for that company if one does not exist.
   - `body_markdown` must be a **fact bullet list** (`- Fact...`), not prose paragraphs. Write the actual fact bullets drawn from the brief, not a description of what to add.
 - **update**: Only when the brief adds genuinely new knowledge to an existing topic. Provide slug, append_sources, optionally summary_addendum, summary_addendum_sources, and tags.
   - `summary_addendum` must be a **fact bullet list** (`- Fact...`) when present. Write the actual fact bullets, not a description of what to add.
 - Each bullet in `summary_addendum` must map to exactly one source URL in `summary_addendum_sources` (same order, same length).
 - Use source attribution with markdown footnotes, e.g. [^1] and [^1]: https://example.com.
 - If no new knowledge is present, do not emit an update action.
+
+Tracked companies (strong candidates for new topic pages when mentioned in the brief):
+{tracked_companies}
 
 This week's brief (category: {topic}):
 {brief_content}
@@ -929,15 +933,23 @@ def _list_existing_topic_previews(topics_dir: Path, max_preview_chars: int = 400
     return out
 
 
-def _call_cursor_topic_gardener(brief_content: str, existing_topics: list[dict], topic: str) -> list[dict]:
+def _call_cursor_topic_gardener(
+    brief_content: str,
+    existing_topics: list[dict],
+    topic: str,
+    *,
+    tracked_companies: list[str] | None = None,
+) -> list[dict]:
     """Call Cursor to suggest create/update topic actions from brief content and existing topic previews."""
     existing_str = "\n\n".join(
         f"- **{t['slug']}**:\n{t['preview']}" for t in existing_topics
     ) or "(no existing topics yet)"
+    companies_str = ", ".join((tracked_companies or [])[:100]) or "(none)"
     prompt = TOPIC_GARDENER_PROMPT.format(
         topic=topic,
         brief_content=brief_content,
         existing_topics=existing_str,
+        tracked_companies=companies_str,
     )
     try:
         parsed = run_structured_prompt(
@@ -1067,6 +1079,7 @@ def run_topic_gardener(
     week_of: str | None = None,
     allowed_source_url_index: dict[str, str] | None = None,
     existing_topics: list[dict] | None = None,
+    tracked_companies: list[str] | None = None,
 ) -> None:
     """Run topic gardener on a brief: suggest create/update topic pages and apply actions under topics_dir."""
     topics_dir.mkdir(parents=True, exist_ok=True)
@@ -1078,7 +1091,12 @@ def run_topic_gardener(
         existing_topics = _list_existing_topic_previews(topics_dir)
     disable = not sys.stderr.isatty()
     with tqdm(desc="Topic gardener (agent)", total=None, unit="", disable=disable):
-        actions = _call_cursor_topic_gardener(brief_content, existing_topics, topic)
+        actions = _call_cursor_topic_gardener(
+            brief_content,
+            existing_topics,
+            topic,
+            tracked_companies=tracked_companies,
+        )
     if logs_dir is not None and week_of is not None:
         logs_dir.mkdir(parents=True, exist_ok=True)
         out_path = logs_dir / f"topic_actions_{week_of}_{topic}.json"
@@ -1380,10 +1398,13 @@ def run_weekly(
     items = tocify.fetch_rss_items(feeds, end_date=week_end if week_spec is not None else None)
     print(f"Fetched {len(items)} RSS items (pre-filter) [topic={topic}]")
 
-    # OpenAlex and/or NewsAPI and/or Google News for this week's date range (current or past); topic-derived search
+    # OpenAlex and/or NewsAPI and/or Google News and/or ClinicalTrials/EDGAR/newsrooms for this week's date range
     weekly_openalex = (os.getenv("WEEKLY_OPENALEX", "1") or "").strip().lower() in ("1", "true", "yes")
     news_backend = (os.getenv("NEWS_BACKEND") or "").strip().lower()
     add_google_news = (os.getenv("ADD_GOOGLE_NEWS") or "").strip().lower() in ("1", "true", "yes")
+    add_clinical_trials = (os.getenv("ADD_CLINICAL_TRIALS") or "").strip().lower() in ("1", "true", "yes")
+    add_edgar = (os.getenv("ADD_EDGAR") or "").strip().lower() in ("1", "true", "yes")
+    add_newsrooms = (os.getenv("ADD_NEWSROOMS") or "").strip().lower() in ("1", "true", "yes")
     backends = []
     if weekly_openalex and (topic_search or "").strip():
         backends.append("openalex")
@@ -1391,7 +1412,32 @@ def run_weekly(
         backends.append("newsapi")
     if add_google_news or news_backend == "googlenews":
         backends.append("googlenews")
+    if add_clinical_trials:
+        backends.append("clinicaltrials")
+    if add_edgar:
+        backends.append("edgar")
+    if add_newsrooms:
+        backends.append("newsrooms")
     googlenews_queries = tocify.topic_search_queries(interests) if "googlenews" in backends else None
+    clinicaltrials_query = (os.getenv("CLINICALTRIALS_QUERY") or "").strip() or topic_search or None
+    edgar_ciks = None
+    if "edgar" in backends and paths.edgar_ciks_path and paths.edgar_ciks_path.exists():
+        edgar_ciks = [
+            line.strip() for line in paths.edgar_ciks_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    if not edgar_ciks and "edgar" in backends:
+        raw = (os.getenv("EDGAR_CIKS") or "").strip()
+        edgar_ciks = [c.strip() for c in raw.split(",") if c.strip()] or None
+    newsrooms_urls = None
+    if "newsrooms" in backends and paths.newsrooms_path and paths.newsrooms_path.exists():
+        newsrooms_urls = [
+            line.strip() for line in paths.newsrooms_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    if not newsrooms_urls and "newsrooms" in backends:
+        raw = (os.getenv("NEWSROOMS_URLS") or "").strip()
+        newsrooms_urls = [u.strip() for u in raw.splitlines() if u.strip()] or None
     if backends:
         try:
             extra = tocify.fetch_historical_items(
@@ -1401,12 +1447,15 @@ def run_weekly(
                 openalex_search=topic_search or None,
                 news_query=topic_search or None,
                 googlenews_queries=googlenews_queries,
+                clinicaltrials_query=clinicaltrials_query,
+                edgar_ciks=edgar_ciks,
+                newsrooms_urls=newsrooms_urls,
             )
             if extra:
                 items = tocify.merge_feed_items(items, extra, max_items=MAX_TOTAL_ITEMS)
                 print(f"Added {len(extra)} items from {','.join(backends)} (merged total {len(items)}) [topic={topic}]")
         except Exception as e:
-            tqdm.write(f"[WARN] Weekly fetch (openalex/news/googlenews) failed: {e}")
+            tqdm.write(f"[WARN] Weekly fetch (historical backends) failed: {e}")
 
     paths.briefs_dir.mkdir(parents=True, exist_ok=True)
     brief_filename = f"{week_of}_{topic}_weekly-brief.md"
@@ -1440,7 +1489,10 @@ def run_weekly(
         return
 
     items = tocify.keyword_prefilter(
-        items, interests["keywords"], keep_top=PREFILTER_KEEP_TOP
+        items,
+        interests["keywords"],
+        keep_top=PREFILTER_KEEP_TOP,
+        companies=interests.get("companies", []),
     )
     seen_norm = {}
     deduped = []
@@ -1634,5 +1686,6 @@ def run_weekly(
             week_of=week_of,
             allowed_source_url_index=_build_allowed_source_url_index(kept_items_for_sources),
             existing_topics=topic_data[1] if topic_data else None,
+            tracked_companies=interests.get("companies", []),
         )
         clean_stray_action_json_in_logs(paths.logs_dir, f"topic_actions_{week_of}_{topic}.json")

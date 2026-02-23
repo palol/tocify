@@ -26,6 +26,8 @@ class TopicPaths:
     logs_dir: Path
     briefs_articles_csv: Path
     prompt_path: Path
+    edgar_ciks_path: Path
+    newsrooms_path: Path
 
 
 @dataclass
@@ -57,6 +59,8 @@ def get_topic_paths(topic: str, vault_root: Path | None = None) -> TopicPaths:
         logs_dir=content / "logs",
         briefs_articles_csv=content / "briefs_articles.csv",
         prompt_path=config / "triage_prompt.txt",
+        edgar_ciks_path=config / f"edgar_ciks.{topic}.txt",
+        newsrooms_path=config / f"newsrooms.{topic}.txt",
     )
 
 

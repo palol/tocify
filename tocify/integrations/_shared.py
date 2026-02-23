@@ -62,9 +62,11 @@ def build_triage_prompt(
         for it in items
     ]
     template = load_prompt_template(prompt_path)
+    companies = interests.get("companies", [])
     prompt = (
         template.replace("{{KEYWORDS}}", json.dumps(interests["keywords"], ensure_ascii=False))
         .replace("{{NARRATIVE}}", interests["narrative"])
+        .replace("{{COMPANIES}}", json.dumps(companies, ensure_ascii=False))
         .replace("{{ITEMS}}", json.dumps(lean_items, ensure_ascii=False))
     )
     return (prompt, lean_items)

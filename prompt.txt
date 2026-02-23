@@ -27,6 +27,9 @@ Output rules:
 USER KEYWORDS:
 {{KEYWORDS}}
 
+TRACKED COMPANIES (weight mentions in title/summary):
+{{COMPANIES}}
+
 USER INTERESTS:
 {{NARRATIVE}}
 

@@ -125,14 +125,21 @@ def fetch_historical_items(
     openalex_search: str | None = None,
     news_query: str | None = None,
     googlenews_queries: list[str] | None = None,
+    clinicaltrials_query: str | None = None,
+    edgar_ciks: list[str] | None = None,
+    newsrooms_urls: list[str] | None = None,
 ) -> list[dict]:
     """
     Fetch articles from historical backends for the given date range.
     Returns list of dicts with keys: id, source, title, link, published_utc, summary
     (same schema as RSS for merge/triage).
 
-    backends: list of "openalex", "newsapi", "googlenews". If None, uses env HISTORICAL_BACKENDS (comma-separated) or ["openalex"].
+    backends: list of "openalex", "newsapi", "googlenews", "clinicaltrials", "edgar", "newsrooms".
+    If None, uses env HISTORICAL_BACKENDS (comma-separated) or ["openalex"].
     googlenews_queries: list of search terms for Google News RSS (one request per query). If empty when googlenews is in backends, skip.
+    clinicaltrials_query: optional search term for ClinicalTrials.gov. If None when clinicaltrials in backends, uses env CLINICALTRIALS_QUERY.
+    edgar_ciks: optional list of SEC CIKs for company filings. If None when edgar in backends, uses env EDGAR_CIKS or per-topic file.
+    newsrooms_urls: optional list of newsroom index URLs to scrape. If None when newsrooms in backends, uses per-topic file or env.
     """
     if backends is None:
         raw = (os.getenv("HISTORICAL_BACKENDS") or "openalex").strip()
@@ -142,32 +149,70 @@ def fetch_historical_items(
     seen_ids: set[str] = set()
 
     for name in backends:
-        if name == "openalex":
-            batch = _fetch_openalex(start_date, end_date, search=openalex_search)
-            for it in batch:
-                iid = it.get("id")
-                if iid and iid not in seen_ids:
-                    seen_ids.add(iid)
-                    all_items.append(it)
-        elif name == "newsapi":
-            from tocify.news import fetch_news_items
-            batch = fetch_news_items(start_date, end_date, query=news_query or None)
-            for it in batch:
-                iid = it.get("id")
-                if iid and iid not in seen_ids:
-                    seen_ids.add(iid)
-                    all_items.append(it)
-        elif name == "googlenews":
-            queries = googlenews_queries or []
-            if queries:
-                from tocify.googlenews import fetch_google_news_items
-                batch = fetch_google_news_items(start_date, end_date, queries)
+        try:
+            if name == "openalex":
+                batch = _fetch_openalex(start_date, end_date, search=openalex_search)
                 for it in batch:
                     iid = it.get("id")
                     if iid and iid not in seen_ids:
                         seen_ids.add(iid)
                         all_items.append(it)
-        # ignore unknown backend names
+            elif name == "newsapi":
+                from tocify.news import fetch_news_items
+                batch = fetch_news_items(start_date, end_date, query=news_query or None)
+                for it in batch:
+                    iid = it.get("id")
+                    if iid and iid not in seen_ids:
+                        seen_ids.add(iid)
+                        all_items.append(it)
+            elif name == "googlenews":
+                queries = googlenews_queries or []
+                if queries:
+                    from tocify.googlenews import fetch_google_news_items
+                    batch = fetch_google_news_items(start_date, end_date, queries)
+                    for it in batch:
+                        iid = it.get("id")
+                        if iid and iid not in seen_ids:
+                            seen_ids.add(iid)
+                            all_items.append(it)
+            elif name == "clinicaltrials":
+                from tocify.clinicaltrials import fetch_clinicaltrials_items
+                q = clinicaltrials_query or os.getenv("CLINICALTRIALS_QUERY", "").strip() or None
+                batch = fetch_clinicaltrials_items(start_date, end_date, query=q)
+                for it in batch:
+                    iid = it.get("id")
+                    if iid and iid not in seen_ids:
+                        seen_ids.add(iid)
+                        all_items.append(it)
+            elif name == "edgar":
+                ciks = edgar_ciks
+                if ciks is None:
+                    raw_ciks = (os.getenv("EDGAR_CIKS") or "").strip()
+                    ciks = [c.strip() for c in raw_ciks.split(",") if c.strip()]
+                if ciks:
+                    from tocify.edgar import fetch_edgar_items
+                    batch = fetch_edgar_items(start_date, end_date, ciks=ciks)
+                    for it in batch:
+                        iid = it.get("id")
+                        if iid and iid not in seen_ids:
+                            seen_ids.add(iid)
+                            all_items.append(it)
+            elif name == "newsrooms":
+                urls = newsrooms_urls
+                if urls is None:
+                    raw_urls = (os.getenv("NEWSROOMS_URLS") or "").strip()
+                    urls = [u.strip() for u in raw_urls.splitlines() if u.strip()]
+                if urls:
+                    from tocify.newsrooms import fetch_newsroom_items
+                    batch = fetch_newsroom_items(start_date, end_date, urls=urls)
+                    for it in batch:
+                        iid = it.get("id")
+                        if iid and iid not in seen_ids:
+                            seen_ids.add(iid)
+                            all_items.append(it)
+        except Exception as e:
+            import warnings
+            warnings.warn(f"Historical backend {name!r} failed: {e}", stacklevel=2)
 
     all_items.sort(key=lambda x: x.get("published_utc") or "", reverse=True)
     return all_items[:HISTORICAL_MAX_ITEMS]

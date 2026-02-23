@@ -8,7 +8,6 @@ keywords (all keywords by default; cap via GOOGLE_NEWS_MAX_QUERIES for safety).
 
 import os
 from datetime import date, datetime, time as dt_time, timezone
-from io import BytesIO
 from urllib.parse import quote_plus
 
 import feedparser
@@ -88,13 +87,15 @@ def fetch_google_news_items(
         try:
             resp = requests.get(url, timeout=timeout)
             resp.raise_for_status()
-            d = feedparser.parse(BytesIO(resp.content))
+            d = feedparser.parse(resp.content)
         except Exception as e:
             tqdm.write(f"[WARN] Google News RSS fetch failed {q!r}: {e}")
             continue
-
+        if d is None:
+            continue
+        entries = getattr(d, "entries", None) or []
         source_label = f"Google News ({q})"
-        for e in (d.entries or [])[:max_per_query]:
+        for e in entries[:max_per_query]:
             title = (e.get("title") or "").strip()
             link = (e.get("link") or "").strip()
             if not title or not link:

@@ -77,7 +77,8 @@ def section(md: str, heading: str) -> str:
     return (rest[:m2.start()] if m2 else rest).strip()
 
 def parse_interests_md(md: str) -> dict:
-    """Parse interests markdown with Keywords and Narrative sections; return dict with keys keywords (list) and narrative (str, truncated to INTERESTS_MAX_CHARS)."""
+    """Parse interests markdown with Keywords, Narrative, and optional Companies sections.
+    Returns dict with keys: keywords (list), narrative (str, truncated), companies (list, optional)."""
     keywords = []
     for line in section(md, "Keywords").splitlines():
         line = re.sub(r"^[\-\*\+]\s+", "", line.strip())
@@ -86,7 +87,16 @@ def parse_interests_md(md: str) -> dict:
     narrative = section(md, "Narrative").strip()
     if len(narrative) > INTERESTS_MAX_CHARS:
         narrative = narrative[:INTERESTS_MAX_CHARS] + "…"
-    return {"keywords": keywords[:200], "narrative": narrative}
+    companies = []
+    for line in section(md, "Companies").splitlines():
+        line = re.sub(r"^[\-\*\+]\s+", "", line.strip())
+        if line:
+            companies.append(line)
+    return {
+        "keywords": keywords[:200],
+        "narrative": narrative,
+        "companies": companies[:200],
+    }
 
 
 def topic_search_string(
@@ -238,12 +248,23 @@ def merge_feed_items(*item_lists: list[dict], max_items: int | None = None) -> l
 
 
 # ---- local prefilter ----
-def keyword_prefilter(items: list[dict], keywords: list[str], keep_top: int) -> list[dict]:
-    """Score items by keyword hits and return top keep_top (or unfiltered slice if few matches)."""
+def keyword_prefilter(
+    items: list[dict],
+    keywords: list[str],
+    keep_top: int,
+    *,
+    companies: list[str] | None = None,
+) -> list[dict]:
+    """Score items by keyword and company hits; return top keep_top (or unfiltered slice if few matches).
+    If companies is provided, matches on company names count toward the score like keyword matches."""
     kws = [k.lower() for k in keywords if k.strip()]
+    comps = [c.lower() for c in (companies or []) if c.strip()]
+    all_terms = kws + comps
+
     def hits(it):
-        text = (it.get("title","") + " " + it.get("summary","")).lower()
-        return sum(1 for k in kws if k in text)
+        text = (it.get("title", "") + " " + it.get("summary", "")).lower()
+        return sum(1 for t in all_terms if t in text)
+
     scored = [(hits(it), it) for it in items]
     matched = [it for s, it in scored if s > 0]
     if len(matched) < min(50, keep_top):
@@ -412,7 +433,12 @@ def main():
         print("No items; wrote digest.md")
         return
 
-    items = keyword_prefilter(items, interests["keywords"], keep_top=PREFILTER_KEEP_TOP)
+    items = keyword_prefilter(
+        items,
+        interests["keywords"],
+        keep_top=PREFILTER_KEEP_TOP,
+        companies=interests.get("companies", []),
+    )
     print(f"Sending {len(items)} RSS items to model (post-filter)")
 
     items_by_id = {it["id"]: it for it in items}

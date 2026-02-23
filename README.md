@@ -150,12 +150,22 @@ Weekly brief generation now canonicalizes `## [Title](url)` heading links using 
 **Vault layout**
 
 - `config/feeds.<topic>.txt` — RSS feeds (Name | URL)
-- `config/interests.<topic>.md` — Keywords + Narrative
+- `config/interests.<topic>.md` — Keywords + Narrative (+ optional **Companies**; see [Company list](docs/sources.md#company-list-neurotech-startups))
 - `config/triage_prompt.txt` — Shared triage prompt
 - `content/briefs_articles.csv` — Chosen articles (topic column)
 - `content/briefs/` — Weekly briefs and monthly/annual outputs
 - `content/logs/` — Logs
 - `content/topics/` — Optional digital garden for topic redundancy and gardener
+
+**Industry backends** (weekly run)
+
+Beyond RSS and OpenAlex/NewsAPI/Google News, the weekly runner can pull from neurotech/industry sources. Each backend returns the same item schema and is merged with RSS before triage. Enable via env and optional per-topic config:
+
+| Env / config | Purpose |
+|--------------|--------|
+| `ADD_CLINICAL_TRIALS=1` | Enable ClinicalTrials.gov (studies by date range; optional search via `CLINICALTRIALS_QUERY` or topic keywords) |
+| `ADD_EDGAR=1` | Enable SEC EDGAR company filings (by CIK). Set `EDGAR_CIKS` (comma-separated) or use `config/edgar_ciks.<topic>.txt` (one CIK per line) |
+| `ADD_NEWSROOMS=1` | Enable company newsroom scraper (experimental). Set `NEWSROOMS_URLS` (newline-separated) or use `config/newsrooms.<topic>.txt` (one index URL per line). Only links with a date in the URL path are included. |
 
 **Automation notes**
 
