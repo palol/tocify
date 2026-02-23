@@ -82,10 +82,17 @@ def _load_weekly_module():
     clear_mod = types.ModuleType("tocify.runner.clear")
     clear_mod.clean_stray_action_json_in_logs = lambda *args, **kwargs: 0
 
+    _utils_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "_utils.py"
+    _utils_spec = importlib.util.spec_from_file_location("tocify.runner._utils", _utils_path)
+    _utils_mod = importlib.util.module_from_spec(_utils_spec)
+    assert _utils_spec and _utils_spec.loader
+    _utils_spec.loader.exec_module(_utils_mod)
+
     sys.modules["tocify"] = tocify_mod
     sys.modules["tocify.runner"] = runner_mod
     sys.modules["tocify.runner.vault"] = vault_mod
     sys.modules["tocify.runner.clear"] = clear_mod
+    sys.modules["tocify.runner._utils"] = _utils_mod
     sys.modules["tocify.runner.link_hygiene"] = link_hygiene_mod
     sys.modules["tocify.frontmatter"] = frontmatter_mod
     sys.modules["dotenv"] = dotenv_mod

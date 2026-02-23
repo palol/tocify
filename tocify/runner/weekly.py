@@ -1382,7 +1382,7 @@ def run_weekly(
     weekly_openalex = (os.getenv("WEEKLY_OPENALEX", "1") or "").strip().lower() in ("1", "true", "yes")
     news_backend = (os.getenv("NEWS_BACKEND") or "").strip().lower()
     backends = []
-    if weekly_openalex:
+    if weekly_openalex and (topic_search or "").strip():
         backends.append("openalex")
     if news_backend == "newsapi":
         backends.append("newsapi")

@@ -89,11 +89,29 @@ def parse_interests_md(md: str) -> dict:
     return {"keywords": keywords[:200], "narrative": narrative}
 
 
-def topic_search_string(interests: dict, max_keywords: int = 5) -> str:
-    """Build a single search string from interests keywords for OpenAlex/NewsAPI queries. Uses first max_keywords (default 5) joined by spaces."""
+def topic_search_string(
+    interests: dict,
+    max_keywords: int | None = None,
+    *,
+    narrative_fallback_words: int = 15,
+) -> str:
+    """Build a single search string from interests keywords for OpenAlex/NewsAPI queries.
+    Uses all keywords (or first max_keywords if set) joined by spaces.
+    When there are no keywords and narrative_fallback_words > 0, uses the first N words of the narrative as fallback."""
     keywords = interests.get("keywords") or []
-    taken = [k.strip() for k in keywords[:max_keywords] if k and str(k).strip()]
-    return " ".join(taken) if taken else ""
+    if max_keywords is not None:
+        keywords = keywords[:max_keywords]
+    taken = [k.strip() for k in keywords if k and str(k).strip()]
+    if taken:
+        return " ".join(taken)
+    if narrative_fallback_words <= 0:
+        return ""
+    narrative = (interests.get("narrative") or "").strip()
+    if not narrative:
+        return ""
+    words = re.findall(r"\b\w+\b", narrative)
+    first = words[:narrative_fallback_words]
+    return " ".join(first) if first else ""
 
 
 # ---- rss ----
