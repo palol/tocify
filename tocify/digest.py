@@ -71,12 +71,31 @@ def read_text(path: str) -> str:
 
 def section(md: str, heading: str) -> str:
     """Extract the first markdown section body under the given heading (e.g. ## Keywords)."""
-    m = re.search(rf"(?im)^\s*#{1,6}\s+{re.escape(heading)}\s*$", md)
-    if not m:
+    target = (heading or "").strip().casefold()
+    if not target:
         return ""
-    rest = md[m.end():]
-    m2 = re.search(r"(?im)^\s*#{1,6}\s+\S", rest)
-    return (rest[:m2.start()] if m2 else rest).strip()
+
+    lines = (md or "").splitlines()
+    body_start = None
+
+    for idx, raw_line in enumerate(lines):
+        m = re.match(r"^\s{0,3}(#{1,6})[ \t]+(.+?)\s*$", raw_line)
+        if not m:
+            continue
+        title = re.sub(r"\s+#+\s*$", "", m.group(2)).strip().casefold()
+        if title == target:
+            body_start = idx + 1
+            break
+
+    if body_start is None:
+        return ""
+
+    body_lines: list[str] = []
+    for raw_line in lines[body_start:]:
+        if re.match(r"^\s{0,3}#{1,6}\s+\S", raw_line):
+            break
+        body_lines.append(raw_line)
+    return "\n".join(body_lines).strip()
 
 def parse_interests_md(md: str) -> dict:
     """Parse interests markdown with Keywords, Narrative, and optional Companies sections.
