@@ -114,6 +114,20 @@ def topic_search_string(
     return " ".join(first) if first else ""
 
 
+def topic_search_queries(
+    interests: dict,
+    max_queries: int | None = None,
+) -> list[str]:
+    """Build a list of search queries from interests keywords (one per keyword).
+    Returns all non-empty, stripped keywords; if max_queries is set (e.g. 100), cap at that for safety.
+    Used by Google News to run one RSS search per keyword so no topic is left out."""
+    keywords = interests.get("keywords") or []
+    taken = [k.strip() for k in keywords if k and str(k).strip()]
+    if max_queries is not None and max_queries > 0:
+        taken = taken[:max_queries]
+    return taken
+
+
 # ---- rss ----
 def parse_date(entry) -> datetime | None:
     """Return datetime (UTC) for an RSS entry from published/updated fields, or None."""
@@ -341,11 +355,12 @@ def main():
     print(f"Fetched {len(items)} RSS items (pre-filter)")
 
     # Optional news backend for present flow (same date window as RSS)
+    now = datetime.now(timezone.utc)
+    start_dt = now - timedelta(days=LOOKBACK_DAYS)
+    end_dt = now
     news_backend = (os.getenv("NEWS_BACKEND") or "").strip().lower()
+    add_google_news = (os.getenv("ADD_GOOGLE_NEWS") or "").strip().lower() in ("1", "true", "yes")
     if news_backend == "newsapi":
-        now = datetime.now(timezone.utc)
-        end_dt = now
-        start_dt = end_dt - timedelta(days=LOOKBACK_DAYS)
         try:
             from tocify.news import fetch_news_items as fetch_news
             news_items = fetch_news(start_dt.date(), end_dt.date())
@@ -354,6 +369,17 @@ def main():
                 print(f"Added {len(news_items)} news items (merged total {len(items)})")
         except Exception as e:
             tqdm.write(f"[WARN] News backend failed: {e}")
+    if add_google_news or news_backend == "googlenews":
+        try:
+            from tocify.googlenews import fetch_google_news_items
+            queries = topic_search_queries(interests)
+            if queries:
+                gnews_items = fetch_google_news_items(start_dt.date(), end_dt.date(), queries)
+                if gnews_items:
+                    items = merge_feed_items(items, gnews_items, max_items=MAX_TOTAL_ITEMS)
+                    print(f"Added {len(gnews_items)} Google News items (merged total {len(items)})")
+        except Exception as e:
+            tqdm.write(f"[WARN] Google News fetch failed: {e}")
     triage_metadata = {"triage_backend": "unknown", "triage_model": "unknown"}
     try:
         from tocify.integrations import get_triage_runtime_metadata

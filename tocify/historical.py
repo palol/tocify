@@ -124,13 +124,15 @@ def fetch_historical_items(
     *,
     openalex_search: str | None = None,
     news_query: str | None = None,
+    googlenews_queries: list[str] | None = None,
 ) -> list[dict]:
     """
     Fetch articles from historical backends for the given date range.
     Returns list of dicts with keys: id, source, title, link, published_utc, summary
     (same schema as RSS for merge/triage).
 
-    backends: list of "openalex", "newsapi". If None, uses env HISTORICAL_BACKENDS (comma-separated) or ["openalex"] (NewsAPI not used for range by default to save quota).
+    backends: list of "openalex", "newsapi", "googlenews". If None, uses env HISTORICAL_BACKENDS (comma-separated) or ["openalex"].
+    googlenews_queries: list of search terms for Google News RSS (one request per query). If empty when googlenews is in backends, skip.
     """
     if backends is None:
         raw = (os.getenv("HISTORICAL_BACKENDS") or "openalex").strip()
@@ -155,6 +157,16 @@ def fetch_historical_items(
                 if iid and iid not in seen_ids:
                     seen_ids.add(iid)
                     all_items.append(it)
+        elif name == "googlenews":
+            queries = googlenews_queries or []
+            if queries:
+                from tocify.googlenews import fetch_google_news_items
+                batch = fetch_google_news_items(start_date, end_date, queries)
+                for it in batch:
+                    iid = it.get("id")
+                    if iid and iid not in seen_ids:
+                        seen_ids.add(iid)
+                        all_items.append(it)
         # ignore unknown backend names
 
     all_items.sort(key=lambda x: x.get("published_utc") or "", reverse=True)

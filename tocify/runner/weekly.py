@@ -1378,14 +1378,18 @@ def run_weekly(
     items = tocify.fetch_rss_items(feeds, end_date=week_end if week_spec is not None else None)
     print(f"Fetched {len(items)} RSS items (pre-filter) [topic={topic}]")
 
-    # OpenAlex and/or NewsAPI for this week's date range (current or past); topic-derived search
+    # OpenAlex and/or NewsAPI and/or Google News for this week's date range (current or past); topic-derived search
     weekly_openalex = (os.getenv("WEEKLY_OPENALEX", "1") or "").strip().lower() in ("1", "true", "yes")
     news_backend = (os.getenv("NEWS_BACKEND") or "").strip().lower()
+    add_google_news = (os.getenv("ADD_GOOGLE_NEWS") or "").strip().lower() in ("1", "true", "yes")
     backends = []
     if weekly_openalex and (topic_search or "").strip():
         backends.append("openalex")
     if news_backend == "newsapi":
         backends.append("newsapi")
+    if add_google_news or news_backend == "googlenews":
+        backends.append("googlenews")
+    googlenews_queries = tocify.topic_search_queries(interests) if "googlenews" in backends else None
     if backends:
         try:
             extra = tocify.fetch_historical_items(
@@ -1394,12 +1398,13 @@ def run_weekly(
                 backends=backends,
                 openalex_search=topic_search or None,
                 news_query=topic_search or None,
+                googlenews_queries=googlenews_queries,
             )
             if extra:
                 items = tocify.merge_feed_items(items, extra, max_items=MAX_TOTAL_ITEMS)
                 print(f"Added {len(extra)} items from {','.join(backends)} (merged total {len(items)}) [topic={topic}]")
         except Exception as e:
-            tqdm.write(f"[WARN] Weekly fetch (openalex/news) failed: {e}")
+            tqdm.write(f"[WARN] Weekly fetch (openalex/news/googlenews) failed: {e}")
 
     paths.briefs_dir.mkdir(parents=True, exist_ok=True)
     brief_filename = f"{week_of}_{topic}_weekly-brief.md"
