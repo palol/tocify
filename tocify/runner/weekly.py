@@ -1400,6 +1400,8 @@ def run_weekly(
         print("No items met threshold this run; preserving existing brief.")
         return
 
+    gardener_source_url_index: dict[str, str] = {}
+
     if kept and brief_path.exists():
         # Merge: append new entries to bottom; deterministic frontmatter updates
         existing_text = brief_path.read_text(encoding="utf-8")
@@ -1422,6 +1424,7 @@ def run_weekly(
         new_link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
         link_rows = existing_link_rows + new_link_rows
         allowed_heading_url_index = _build_allowed_url_index_from_link_rows(link_rows)
+        gardener_source_url_index = allowed_heading_url_index
         md = with_frontmatter(merged_body, merged_frontmatter)
         try:
             md, link_stats = _resolve_weekly_heading_links(md, brief_filename, link_rows)
@@ -1451,6 +1454,7 @@ def run_weekly(
         md = render_brief_md(result, items_by_id, kept, topic, min_score_read=MIN_SCORE_READ)
         allowed_heading_url_index = _build_weekly_allowed_url_index(kept, items_by_id)
         link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
+        gardener_source_url_index = _build_allowed_url_index_from_link_rows(link_rows)
         try:
             md, link_stats = _resolve_weekly_heading_links(md, brief_filename, link_rows)
             print(
@@ -1489,17 +1493,13 @@ def run_weekly(
 
     if TOPIC_GARDENER_ENABLED and not dry_run and kept:
         topics_dir.mkdir(parents=True, exist_ok=True)
-        kept_items_for_sources = [
-            {"link": (r.get("link") or items_by_id.get(r.get("id"), {}).get("link") or "").strip()}
-            for r in kept
-        ]
         run_topic_gardener(
             topics_dir,
             brief_path,
             topic,
             logs_dir=paths.logs_dir,
             week_of=week_of,
-            allowed_source_url_index=_build_allowed_source_url_index(kept_items_for_sources),
+            allowed_source_url_index=gardener_source_url_index,
             existing_topics=topic_data[1] if topic_data else None,
             tracked_companies=interests.get("companies", []),
         )
