@@ -64,6 +64,9 @@ TOPIC_REDUNDANCY_ENABLED = env_bool("TOPIC_REDUNDANCY", True)
 TOPIC_REDUNDANCY_LOOKBACK_DAYS = env_int("TOPIC_REDUNDANCY_LOOKBACK_DAYS", 56)
 TOPIC_REDUNDANCY_BATCH_SIZE = env_int("TOPIC_REDUNDANCY_BATCH_SIZE", 25)
 TOPIC_GARDENER_ENABLED = env_bool("TOPIC_GARDENER", True)
+MAX_RANKED_TAGS = 8
+MAX_RANKED_TAG_CHARS = 40
+MAX_RANKED_WHY_CHARS = 320
 
 BRIEFS_ARTICLES_COLUMNS = [
     "topic", "week_of", "url", "title", "source", "published_utc", "score", "brief_filename",
@@ -73,6 +76,124 @@ BRIEFS_ARTICLES_COLUMNS = [
 FOOTNOTE_DEF_LINE_RE = re.compile(r"^\[\^(\d+)\]:\s*(\S+)\s*$")
 FOOTNOTE_MARKER_RE = re.compile(r"\[\^(\d+)\]")
 MENTIONS_SUFFIX_RE = re.compile(r"\s*_\(\s*mentions:\s*\d+\s+sources?\s*\)_\s*$", re.IGNORECASE)
+
+
+def _normalize_ranked_text(value: object) -> str:
+    """Normalize free-text model output to a single paragraph with compact whitespace."""
+    return re.sub(r"\s+", " ", str(value or "").strip())
+
+
+def _normalize_ranked_score(raw_score: object) -> tuple[float | None, bool]:
+    """Normalize score to 0..1. Return (score or None, converted_legacy_percent)."""
+    try:
+        score = float(raw_score)
+    except (TypeError, ValueError):
+        return None, False
+    converted_legacy_percent = False
+    if 1 < score <= 100:
+        score = score / 100.0
+        converted_legacy_percent = True
+    if score < 0 or score > 1:
+        return None, converted_legacy_percent
+    return score, converted_legacy_percent
+
+
+def _sanitize_ranked_tags(raw_tags: object) -> tuple[list[str], int]:
+    """Trim/dedupe/cap ranked tags. Returns (tags, trim_counter_increment)."""
+    raw_values = raw_tags if isinstance(raw_tags, list) else []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    trimmed = 0
+    for idx, raw in enumerate(raw_values):
+        tag = _normalize_ranked_text(raw)
+        if not tag:
+            if str(raw or "").strip():
+                trimmed += 1
+            continue
+        if len(tag) > MAX_RANKED_TAG_CHARS:
+            tag = tag[:MAX_RANKED_TAG_CHARS].rstrip()
+            trimmed += 1
+        if not tag:
+            trimmed += 1
+            continue
+        key = tag.casefold()
+        if key in seen:
+            trimmed += 1
+            continue
+        seen.add(key)
+        normalized.append(tag)
+        if len(normalized) >= MAX_RANKED_TAGS:
+            trimmed += max(0, len(raw_values) - idx - 1)
+            break
+    return normalized, trimmed
+
+
+def normalize_ranked_items(ranked: list[dict], items_by_id: dict[str, dict]) -> tuple[list[dict], dict[str, int]]:
+    """Normalize and canonicalize ranked items before filtering/rendering/writes."""
+    counters = {
+        "dropped_invalid_id": 0,
+        "dropped_invalid_score": 0,
+        "score_legacy_percent_converted": 0,
+        "why_trimmed": 0,
+        "tags_trimmed": 0,
+        "duplicate_id_resolved": 0,
+    }
+    deduped_by_id: dict[str, dict] = {}
+
+    for raw in ranked if isinstance(ranked, list) else []:
+        if not isinstance(raw, dict):
+            counters["dropped_invalid_id"] += 1
+            continue
+
+        row_id = str(raw.get("id") or "").strip()
+        source_item = items_by_id.get(row_id)
+        if not row_id or not source_item:
+            counters["dropped_invalid_id"] += 1
+            continue
+
+        score, converted_legacy_percent = _normalize_ranked_score(raw.get("score"))
+        if converted_legacy_percent:
+            counters["score_legacy_percent_converted"] += 1
+        if score is None:
+            counters["dropped_invalid_score"] += 1
+            continue
+
+        why = _normalize_ranked_text(raw.get("why") or "")
+        if len(why) > MAX_RANKED_WHY_CHARS:
+            why = why[:MAX_RANKED_WHY_CHARS].rstrip()
+            counters["why_trimmed"] += 1
+
+        tags, tags_trimmed = _sanitize_ranked_tags(raw.get("tags"))
+        counters["tags_trimmed"] += tags_trimmed
+
+        published = source_item.get("published_utc")
+        if published is None:
+            published = raw.get("published_utc")
+        if published is None:
+            published_utc = None
+        else:
+            published_utc = str(published).strip() or None
+
+        normalized = {
+            "id": row_id,
+            "title": str(source_item.get("title") or raw.get("title") or "").strip(),
+            "link": str(source_item.get("link") or raw.get("link") or "").strip(),
+            "source": str(source_item.get("source") or raw.get("source") or "").strip(),
+            "published_utc": published_utc,
+            "score": score,
+            "why": why,
+            "tags": tags,
+        }
+
+        previous = deduped_by_id.get(row_id)
+        if previous is None:
+            deduped_by_id[row_id] = normalized
+            continue
+        counters["duplicate_id_resolved"] += 1
+        if score >= float(previous["score"]):
+            deduped_by_id[row_id] = normalized
+
+    return list(deduped_by_id.values()), counters
 
 
 def parse_week_spec(s: str) -> str:
@@ -1393,7 +1514,18 @@ def run_weekly(
     result["triage_backend"] = triage_metadata["triage_backend"]
     result["triage_model"] = triage_metadata["triage_model"]
 
-    ranked = result.get("ranked", [])
+    ranked_raw = result.get("ranked", [])
+    ranked, normalization_counters = normalize_ranked_items(ranked_raw, items_by_id)
+    result["ranked"] = ranked
+    print(
+        "Triage normalization: "
+        f"dropped_invalid_id={normalization_counters['dropped_invalid_id']}, "
+        f"dropped_invalid_score={normalization_counters['dropped_invalid_score']}, "
+        f"score_legacy_percent_converted={normalization_counters['score_legacy_percent_converted']}, "
+        f"why_trimmed={normalization_counters['why_trimmed']}, "
+        f"tags_trimmed={normalization_counters['tags_trimmed']}, "
+        f"duplicate_id_resolved={normalization_counters['duplicate_id_resolved']}"
+    )
     kept = [r for r in ranked if r["score"] >= MIN_SCORE_READ][:MAX_RETURNED]
 
     if not kept and brief_path.exists():

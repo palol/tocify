@@ -6,8 +6,9 @@ import importlib
 import importlib.util
 import sys
 import types
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 def write_runner_inputs(root: Path, topic: str = "bci") -> None:
@@ -17,7 +18,10 @@ def write_runner_inputs(root: Path, topic: str = "bci") -> None:
         "Example | https://example.com/rss\n", encoding="utf-8"
     )
     (config_dir / f"interests.{topic}.md").write_text("keywords:\n- bci\n", encoding="utf-8")
-    (config_dir / "triage_prompt.txt").write_text("Prompt", encoding="utf-8")
+    (config_dir / "triage_prompt.txt").write_text(
+        "\n".join(["{{KEYWORDS}}", "{{NARRATIVE}}", "{{COMPANIES}}", "{{ITEMS}}"]),
+        encoding="utf-8",
+    )
 
 
 def load_weekly_module_for_tests(

@@ -20,7 +20,7 @@ CURSOR_RETRIES = max(1, int(os.getenv("TOCIFY_CURSOR_RETRIES", "2")))
 CURSOR_PROMPT_SUFFIX = """
 
 Return **only** a single JSON object, no markdown code fences, no commentary. Escape any double quotes inside string values with backslash (\\"). Schema:
-{"week_of": "<ISO date>", "notes": "<string>", "ranked": [{"id": "<string>", "title": "<string>", "link": "<string>", "source": "<string>", "published_utc": "<string|null>", "score": <0-1>, "why": "<string>", "tags": ["<string>"]}]}
+{"week_of": "<ISO date>", "notes": "<string>", "ranked": [{"id": "<string>", "title": "<string>", "link": "<string>", "source": "<string>", "published_utc": "<string|null>", "score": <0-1>, "why": "<max 320 chars>", "tags": ["<1-8 tags, each <=40 chars>"]}]}
 """
 
 

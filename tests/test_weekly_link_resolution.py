@@ -88,7 +88,7 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
         finally:
             weekly._resolve_weekly_heading_links = original_resolver
 
-        self.assertIn("## Paper A", content)
+        self.assertIn("## [Paper A](https://canonical.example.com/a)", content)
         self.assertNotIn("https://fake.example.com/a", content)
 
 
