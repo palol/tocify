@@ -57,6 +57,7 @@ class _LinkExtractor(HTMLParser):
         self.base_url = base_url
         self.base_netloc = base_netloc
         self.links: list[tuple[str, str]] = []  # (href, link_text)
+        self._active_link_idx: int | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag != "a":
@@ -75,11 +76,16 @@ class _LinkExtractor(HTMLParser):
         if not parsed.path or parsed.path == "/":
             return
         self.links.append((full, ""))
+        self._active_link_idx = len(self.links) - 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a":
+            self._active_link_idx = None
 
     def handle_data(self, data: str) -> None:
-        if self.links and data:
-            prev_href, prev_text = self.links[-1]
-            self.links[-1] = (prev_href, (prev_text + data).strip())
+        if self._active_link_idx is not None and data:
+            prev_href, prev_text = self.links[self._active_link_idx]
+            self.links[self._active_link_idx] = (prev_href, (prev_text + data).strip())
 
 
 def _fetch_newsroom_url(
