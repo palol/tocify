@@ -35,7 +35,7 @@ def call_cursor_triage(interests: dict, items: list[dict], prompt_path: str | No
         interests, items, summary_max_chars=SUMMARY_MAX_CHARS, prompt_path=prompt_path
     )
     prompt = prompt + CURSOR_PROMPT_SUFFIX
-    args = ["agent", "-p", "--output-format", "text", "--trust", prompt]
+    args = ["agent", "-p", "--output-format", "text", "--trust"]
     last = None
     timeout = CURSOR_TIMEOUT if CURSOR_TIMEOUT > 0 else None
     for attempt in range(CURSOR_RETRIES):
@@ -44,6 +44,7 @@ def call_cursor_triage(interests: dict, items: list[dict], prompt_path: str | No
                 args,
                 capture_output=True,
                 text=True,
+                input=prompt,
                 env=os.environ,
                 timeout=timeout,
             )

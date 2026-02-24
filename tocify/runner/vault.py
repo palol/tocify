@@ -401,17 +401,18 @@ def _run_cursor_prompt(
         cmd.append("--trust")
     if model and model != "unknown":
         cmd.extend(["--model", model])
-    cmd.append(prompt)
 
     try:
-        completed = subprocess.run(cmd, capture_output=True, text=True, env=os.environ)
+        completed = subprocess.run(
+            cmd, capture_output=True, text=True, input=prompt, env=os.environ
+        )
     except FileNotFoundError as e:
         raise RuntimeError(
             "Cursor backend selected but `agent` command was not found on PATH. "
             "Install Cursor CLI agent support or set TOCIFY_BACKEND=openai|gemini."
         ) from e
 
-    result.command = cmd
+    result.command = cmd + ["<stdin>"]
     result.returncode = int(getattr(completed, "returncode", 0) or 0)
     result.output_text = (completed.stdout or "").strip()
     result.stderr = (completed.stderr or "").strip()

@@ -83,7 +83,7 @@ uv run python -m unittest tests.test_weekly_link_resolution -v
 4. Locally: copy `.env.example` to `.env`, add your key, run `python digest.py`.
 
 Backend selection: if **`TOCIFY_BACKEND`** is set, that backend is used. Otherwise, if **`CURSOR_API_KEY`** is set then **`cursor`** is used, else **`openai`**. Use **`TOCIFY_BACKEND=openai`**, **`cursor`**, or **`gemini`** to force. (Gemini is only used when explicitly set.)
-For Cursor backend, the terminal command must be available as **`agent`** on `PATH`.
+For Cursor backend, the terminal command must be available as **`agent`** on `PATH`. The prompt is passed via stdin to avoid argument-length limits on some platforms.
 
 ---
 
