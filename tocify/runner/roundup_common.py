@@ -69,7 +69,14 @@ def build_allowed_url_index_from_sources(paths: list[Path]) -> dict[str, str]:
 def sanitize_output_links(output_path: Path, allowed_source_url_index: dict[str, str]) -> dict:
     """Rewrite links in output_path to allowed canonicals; return stats. Mutates file if changed."""
     if not output_path.exists():
-        return {"kept": 0, "rewritten": 0, "delinked": 0, "invalid": 0, "unmatched": 0}
+        return {
+            "kept": 0,
+            "rewritten": 0,
+            "html_converted": 0,
+            "delinked": 0,
+            "invalid": 0,
+            "unmatched": 0,
+        }
     raw = output_path.read_text(encoding="utf-8")
     sanitized, stats = sanitize_markdown_links(raw, allowed_source_url_index)
     if sanitized != raw:

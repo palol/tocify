@@ -568,6 +568,7 @@ Rules:
   - `summary_addendum` must be a **fact bullet list** (`- Fact...`) when present. Write the actual fact bullets, not a description of what to add.
 - Each bullet in `summary_addendum` must map to exactly one source URL in `summary_addendum_sources` (same order, same length).
 - Use source attribution with markdown footnotes, e.g. [^1] and [^1]: https://example.com.
+- For inline hyperlinks in markdown fields, use Markdown syntax `[title](url)`. Do not use HTML anchors like `<a href="...">...</a>`.
 - If no new knowledge is present, do not emit an update action.
 
 Tracked companies (strong candidates for new topic pages when mentioned in the brief):
@@ -1584,6 +1585,7 @@ def run_weekly(
             "Link hygiene: "
             f"kept={hygiene_stats['kept']}, "
             f"rewritten={hygiene_stats['rewritten']}, "
+            f"html_converted={hygiene_stats['html_converted']}, "
             f"delinked={hygiene_stats['delinked']}, "
             f"invalid={hygiene_stats['invalid']}, "
             f"unmatched={hygiene_stats['unmatched']}"
@@ -1619,6 +1621,7 @@ def run_weekly(
             "Link hygiene: "
             f"kept={hygiene_stats['kept']}, "
             f"rewritten={hygiene_stats['rewritten']}, "
+            f"html_converted={hygiene_stats['html_converted']}, "
             f"delinked={hygiene_stats['delinked']}, "
             f"invalid={hygiene_stats['invalid']}, "
             f"unmatched={hygiene_stats['unmatched']}"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import re
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
@@ -24,6 +25,11 @@ TRACKING_PARAMS = frozenset(
 UNVERIFIED_LINK_PLACEHOLDER = "(link removed)"
 
 MARKDOWN_LINK_RE = re.compile(r"\[(?P<label>[^\]]+)\]\((?P<url>https?://[^)\s]+)\)")
+HTML_ANCHOR_RE = re.compile(
+    r"<a\b[^>]*\bhref\s*=\s*(?P<quote>[\"'])(?P<url>https?://[^\"'>\s]+)(?P=quote)[^>]*>(?P<label>.*?)</a>",
+    re.IGNORECASE | re.DOTALL,
+)
+HTML_TAG_RE = re.compile(r"<[^>]+>")
 AUTOLINK_RE = re.compile(r"<(?P<url>https?://[^>\s]+)>")
 BARE_URL_RE = re.compile(r"(?<!\()(?<!<)(?P<url>https?://[^\s<>()\]\}]+)", re.IGNORECASE)
 
@@ -83,10 +89,25 @@ def _split_trailing_punctuation(url: str) -> tuple[str, str]:
     return core, trailing
 
 
+def _normalize_anchor_label(label_html: str) -> str:
+    text = HTML_TAG_RE.sub("", str(label_html or ""))
+    text = html.unescape(text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _escape_markdown_link_label(label: str) -> str:
+    return str(label or "").replace("[", r"\[").replace("]", r"\]")
+
+
 def extract_urls_from_markdown(markdown: str) -> list[str]:
     urls: list[str] = []
 
     for m in MARKDOWN_LINK_RE.finditer(markdown or ""):
+        url = str(m.group("url") or "").strip()
+        if url:
+            urls.append(url)
+
+    for m in HTML_ANCHOR_RE.finditer(markdown or ""):
         url = str(m.group("url") or "").strip()
         if url:
             urls.append(url)
@@ -127,6 +148,7 @@ def sanitize_markdown_links(markdown: str, allowed_source_url_index: dict[str, s
     stats = {
         "kept": 0,
         "rewritten": 0,
+        "html_converted": 0,
         "delinked": 0,
         "invalid": 0,
         "unmatched": 0,
@@ -138,6 +160,21 @@ def sanitize_markdown_links(markdown: str, allowed_source_url_index: dict[str, s
         else:
             stats["unmatched"] += 1
         stats["delinked"] += 1
+
+    def _replace_html_anchor(match: re.Match[str]) -> str:
+        label = _normalize_anchor_label(str(match.group("label") or ""))
+        url = str(match.group("url") or "").strip()
+        status, canonical = _resolve_canonical(url, allowed_source_url_index)
+        if status != "trusted":
+            _track_untrusted(status)
+            return label or UNVERIFIED_LINK_PLACEHOLDER
+        stats["html_converted"] += 1
+        if canonical != url:
+            stats["rewritten"] += 1
+        markdown_label = _escape_markdown_link_label(label or canonical)
+        return f"[{markdown_label}]({canonical})"
+
+    sanitized = HTML_ANCHOR_RE.sub(_replace_html_anchor, markdown or "")
 
     def _replace_markdown_link(match: re.Match[str]) -> str:
         label = str(match.group("label") or "").strip()
@@ -152,7 +189,7 @@ def sanitize_markdown_links(markdown: str, allowed_source_url_index: dict[str, s
         stats["rewritten"] += 1
         return f"[{label}]({canonical})"
 
-    sanitized = MARKDOWN_LINK_RE.sub(_replace_markdown_link, markdown or "")
+    sanitized = MARKDOWN_LINK_RE.sub(_replace_markdown_link, sanitized)
 
     def _replace_autolink(match: re.Match[str]) -> str:
         url = str(match.group("url") or "").strip()

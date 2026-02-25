@@ -25,6 +25,7 @@ ANNUAL_REVIEW_PROMPT_TEMPLATE = """You are helping an expert analyst prepare an 
 Return only the **markdown body** of the review (no YAML frontmatter). We will add frontmatter and save the file.
 Your response must be the **final annual review article**—ready to publish. Do not output a plan, outline, or description of what you will write.
 Do not use meta-language (e.g. "I will…", "This section will…"). Write the review itself: concrete conclusions, events, and storylines drawn only from the monthly roundups.
+Use Markdown link syntax `[title](url)` for hyperlinks. Do not use HTML anchor tags like `<a href="...">...</a>`.
 
 Generate an annual review for the year {year}. Use only the following monthly roundups as your source. Do not invent content.
 
@@ -124,6 +125,7 @@ def main(
         "[INFO] Link hygiene: "
         f"kept={link_stats['kept']}, "
         f"rewritten={link_stats['rewritten']}, "
+        f"html_converted={link_stats['html_converted']}, "
         f"delinked={link_stats['delinked']}, "
         f"invalid={link_stats['invalid']}, "
         f"unmatched={link_stats['unmatched']}"
