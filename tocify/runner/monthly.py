@@ -5,7 +5,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from tocify.frontmatter import with_frontmatter
+from tocify.frontmatter import split_frontmatter_and_body, with_frontmatter
 from tocify.runner.roundup_common import (
     build_allowed_url_index_from_sources,
     collect_source_metadata,
@@ -55,12 +55,14 @@ def _apply_monthly_frontmatter(
     end_date: dt.date,
     source_briefs: list[Path],
 ) -> None:
-    body = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+    raw = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+    _, body = split_frontmatter_and_body(raw)
     body = ensure_trailing_monthly_nav(body, month_iso)
     source_meta = collect_source_metadata(source_briefs)
     frontmatter = {
-        "title": f"{topic.upper()} Monthly Roundup — {month_name}",
+        "title": output_path.stem,
         "date": end_date.isoformat(),
+        "date created": f"{end_date.isoformat()} 00:00:00",
         "lastmod": dt.datetime.now(dt.timezone.utc).date().isoformat(),
         "tags": source_meta["tags"],
         "generator": "tocify-monthly",

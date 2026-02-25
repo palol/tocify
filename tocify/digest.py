@@ -334,11 +334,11 @@ def render_digest_md(result: dict, items_by_id: dict[str, dict]) -> str:
     ranked = result.get("ranked", [])
     kept = [r for r in ranked if r["score"] >= MIN_SCORE_READ][:MAX_RETURNED]
     today = datetime.now(timezone.utc).date().isoformat()
-    title = f"Weekly ToC Digest (week of {week_of})"
+    display_title = f"Weekly ToC Digest (week of {week_of})"
     triage_backend = str(result.get("triage_backend") or "unknown")
     triage_model = str(result.get("triage_model") or "unknown")
 
-    lines = [f"# {title}", ""]
+    lines = [f"# {display_title}", ""]
     if notes:
         lines += [notes, ""]
     lines += [
@@ -371,8 +371,9 @@ def render_digest_md(result: dict, items_by_id: dict[str, dict]) -> str:
         lines += ["---", ""]
     body = "\n".join(lines)
     frontmatter = {
-        "title": title,
+        "title": "digest",
         "date": week_of,
+        "date created": f"{week_of} 00:00:00",
         "lastmod": today,
         "tags": aggregate_ranked_item_tags(kept if kept else ranked),
         "generator": "tocify-digest",
@@ -434,8 +435,9 @@ def main():
             f"_No RSS items found in the last {LOOKBACK_DAYS} days._\n"
         )
         no_items_frontmatter = {
-            "title": f"Weekly ToC Digest (week of {today})",
+            "title": "digest",
             "date": today,
+            "date created": f"{today} 00:00:00",
             "lastmod": today,
             "tags": [],
             "generator": "tocify-digest",

@@ -12,6 +12,7 @@ _TAG_CLEAN_RE = re.compile(r"[^a-z0-9]+")
 _FRONTMATTER_KEY_ORDER = [
     "title",
     "date",
+    "date created",
     "lastmod",
     "updated",
     "tags",

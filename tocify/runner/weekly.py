@@ -1120,7 +1120,6 @@ def _apply_topic_action(
     default_tags = normalize_ai_tags(default_tags or [])
 
     if act == "create":
-        title = (action.get("title") or slug).strip()
         body_markdown = _normalize_to_fact_bullets((action.get("body_markdown") or "").strip())
         if allowed_source_url_index is not None and body_markdown:
             body_markdown, _ = sanitize_markdown_links(body_markdown, allowed_source_url_index)
@@ -1138,7 +1137,7 @@ def _apply_topic_action(
             raise ValueError("create action has body_markdown but no source URLs")
         body_with_footnotes = _with_source_footnotes(body_markdown, sources)
         frontmatter = {
-            "title": title,
+            "title": slug,
             "date": today,
             "lastmod": today,
             "updated": today,
@@ -1190,7 +1189,7 @@ def _apply_topic_action(
         existing_sources = _string_list(existing_frontmatter.get("sources"))
         merged_sources = _dedupe_urls(existing_sources + used_sources)
         frontmatter = dict(existing_frontmatter)
-        frontmatter["title"] = str(frontmatter.get("title") or slug).strip() or slug
+        frontmatter["title"] = slug
         frontmatter["date"] = str(frontmatter.get("date") or today)
         frontmatter["lastmod"] = today
         frontmatter["updated"] = today
@@ -1406,14 +1405,15 @@ def run_weekly(
         if brief_path.exists():
             print("No RSS items; preserving existing brief.")
             return
-        no_items_title = _weekly_brief_title(topic, week_of)
+        no_items_display_title = _weekly_brief_title(topic, week_of)
         no_items_body = (
-            f"# {no_items_title}\n\n"
+            f"# {no_items_display_title}\n\n"
             f"_No RSS items found in the last {LOOKBACK_DAYS} days._\n"
         )
         no_items_frontmatter = {
-            "title": no_items_title,
+            "title": brief_path.stem,
             "date": week_of,
+            "date created": f"{week_of} 00:00:00",
             "lastmod": datetime.now(timezone.utc).date().isoformat(),
             "tags": [],
             "generator": "tocify-weekly",
@@ -1559,6 +1559,7 @@ def run_weekly(
         merged_frontmatter = _merge_brief_frontmatter(
             existing_frontmatter, kept, merged_included, merged_scored
         )
+        merged_frontmatter["title"] = brief_path.stem
         existing_link_rows = load_brief_link_rows(paths.briefs_articles_csv, brief_filename)
         new_link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
         link_rows = existing_link_rows + new_link_rows
@@ -1591,7 +1592,10 @@ def run_weekly(
         brief_path.write_text(md, encoding="utf-8")
         print(f"Merged {len(kept)} new entries into {brief_path}")
     else:
-        md = render_brief_md(result, items_by_id, kept, topic, min_score_read=MIN_SCORE_READ)
+        md = render_brief_md(
+            result, items_by_id, kept, topic, min_score_read=MIN_SCORE_READ,
+            title_override=brief_path.stem,
+        )
         allowed_heading_url_index = _build_weekly_allowed_url_index(kept, items_by_id)
         link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
         # Include all topic URLs from CSV (existing briefs) plus this run's link rows for gardener allowlist

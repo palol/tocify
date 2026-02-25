@@ -51,8 +51,9 @@ def _apply_annual_frontmatter(
     body = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
     source_meta = collect_source_metadata(source_roundups)
     frontmatter = {
-        "title": f"{topic.upper()} Annual Review — {year}",
+        "title": output_path.stem,
         "date": f"{year}-12-31",
+        "date created": f"{year}-12-31 00:00:00",
         "lastmod": dt.datetime.now(dt.timezone.utc).date().isoformat(),
         "tags": source_meta["tags"],
         "generator": "tocify-annual",

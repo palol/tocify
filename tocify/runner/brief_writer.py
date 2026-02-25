@@ -17,6 +17,11 @@ def weekly_brief_title(topic: str, week_of: str) -> str:
     return f"{topic.upper()} Weekly Brief (week of {week_of})"
 
 
+def _weekly_date_created_utc(week_of: str) -> str:
+    """Return logical 'date created' for weekly brief: Monday of that ISO week 00:00 UTC (YYYY-MM-DD HH:MM:SS)."""
+    return f"{week_of} 00:00:00"
+
+
 def render_brief_md(
     result: dict,
     items_by_id: dict[str, dict],
@@ -24,17 +29,22 @@ def render_brief_md(
     topic: str,
     *,
     min_score_read: float,
+    title_override: str | None = None,
 ) -> str:
-    """Render triage result and kept items to weekly brief markdown with frontmatter."""
+    """Render triage result and kept items to weekly brief markdown with frontmatter.
+
+    If title_override is set (e.g. brief_path.stem), frontmatter title uses it; body H1 stays human-readable.
+    """
     week_of = result["week_of"]
     notes = result.get("notes", "").strip()
     ranked = result.get("ranked", [])
     today = datetime.now(timezone.utc).date().isoformat()
-    title = weekly_brief_title(topic, week_of)
+    display_title = weekly_brief_title(topic, week_of)
+    frontmatter_title = title_override if title_override is not None else display_title
     triage_backend = str(result.get("triage_backend") or "unknown")
     triage_model = str(result.get("triage_model") or "unknown")
 
-    lines = [f"# {title}", ""]
+    lines = [f"# {display_title}", ""]
     if notes:
         lines += [notes, ""]
     lines += [
@@ -50,8 +60,9 @@ def render_brief_md(
     lines.extend(render_brief_entry_blocks(kept, items_by_id).splitlines())
     body = "\n".join(lines)
     frontmatter = {
-        "title": title,
+        "title": frontmatter_title,
         "date": week_of,
+        "date created": _weekly_date_created_utc(week_of),
         "lastmod": today,
         "tags": aggregate_ranked_item_tags(kept if kept else ranked),
         "generator": "tocify-weekly",
@@ -127,11 +138,15 @@ def merge_brief_frontmatter(
     merged_included: int,
     merged_scored: int,
 ) -> dict:
-    """Update frontmatter when appending new entries into an existing weekly brief."""
+    """Update frontmatter when appending new entries into an existing weekly brief.
+
+    Does not overwrite 'date created'; keeps the original.
+    """
     merged = dict(existing_frontmatter)
     merged["included"] = merged_included
     merged["scored"] = merged_scored
     merged["lastmod"] = datetime.now(timezone.utc).date().isoformat()
+    # Preserve existing "date created" on merge (do not set or overwrite)
     existing_tags = normalize_ai_tags(_string_list(existing_frontmatter.get("tags")))
     new_tags = aggregate_ranked_item_tags(new_kept) if new_kept else []
     combined = _merge_unique(existing_tags + new_tags)
