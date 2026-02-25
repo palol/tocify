@@ -9,21 +9,23 @@ from tocify.runner.vault import get_topic_paths, VAULT_ROOT
 
 
 def _is_canonical_topic_actions(path: Path, vault_root: Path) -> bool:
-    """True if path is content/logs/topic_actions_*.json (tocify's intentional log)."""
+    """True if path is logs/topic_actions_*.json at vault root (or content/logs/ for backward compatibility)."""
     try:
         path = path.resolve()
         root = vault_root.resolve()
-        logs_dir = root / "content" / "logs"
-        if not str(path).startswith(str(logs_dir)):
-            return False
         name = path.name
-        return name.startswith("topic_actions_") and name.endswith(".json")
+        if not name.startswith("topic_actions_") or not name.endswith(".json"):
+            return False
+        path_str = str(path)
+        logs_at_root = str(root / "logs")
+        logs_under_content = str(root / "content" / "logs")
+        return path_str.startswith(logs_at_root) or path_str.startswith(logs_under_content)
     except (ValueError, OSError):
         return False
 
 
 def find_stray_action_json(vault_root: Path | None = None) -> list[Path]:
-    """Find *.json files with 'action' in the filename under the vault, excluding canonical topic_actions_*.json in content/logs/."""
+    """Find *.json files with 'action' in the filename under the vault, excluding canonical topic_actions_*.json in logs/ (or content/logs/)."""
     root = (vault_root or VAULT_ROOT).resolve()
     stray: list[Path] = []
     # Scan root (files only), content/, and config/ (recursive)
@@ -49,7 +51,7 @@ def clean_action_json(
     dry_run: bool = True,
     stray: list[Path] | None = None,
 ) -> int:
-    """Remove stray action JSON files (preserves content/logs/topic_actions_*.json). Returns number removed."""
+    """Remove stray action JSON files (preserves logs/topic_actions_*.json at vault root, or content/logs/). Returns number removed."""
     if stray is None:
         stray = find_stray_action_json(vault_root=vault_root)
     removed = 0

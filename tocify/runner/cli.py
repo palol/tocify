@@ -72,7 +72,7 @@ def cmd_clear_topic(args: argparse.Namespace) -> None:
 
 
 def cmd_clean_action_json(args: argparse.Namespace) -> None:
-    """Remove stray Cursor-produced action JSON; preserve content/logs/topic_actions_*.json."""
+    """Remove stray Cursor-produced action JSON; preserve logs/topic_actions_*.json at vault root."""
     vault = getattr(args, "vault", None)
     dry_run = getattr(args, "dry_run", False)
     stray = find_stray_action_json(vault_root=vault)
@@ -245,7 +245,7 @@ def main() -> None:
     # clean-action-json
     p_clean_aj = subparsers.add_parser(
         "clean-action-json",
-        help="Remove stray Cursor-produced action JSON (preserves content/logs/topic_actions_*.json)",
+        help="Remove stray Cursor-produced action JSON (preserves logs/topic_actions_*.json)",
     )
     p_clean_aj.add_argument("--dry-run", action="store_true", help="List files that would be removed")
     p_clean_aj.set_defaults(run=cmd_clean_action_json)

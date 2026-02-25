@@ -202,6 +202,7 @@ cython_debug/
 .cursorindexingignore
 .cursor/
 #  Tocify/Cursor runner: generated and helper JSON (e.g. topic_actions_*.json, Cursor-produced action files)
+logs/*.json
 content/logs/*.json
 *action*.json
 

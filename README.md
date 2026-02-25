@@ -153,8 +153,10 @@ Weekly brief generation now canonicalizes `## [Title](url)` heading links using 
 - `config/interests.<topic>.md` — Keywords + Narrative (+ optional **Companies**; see [Company list](docs/sources.md#company-list-neurotech-startups))
 - `config/triage_prompt.txt` — Shared triage prompt
 - `content/briefs_articles.csv` — Chosen articles (topic column)
-- `content/briefs/` — Weekly briefs and monthly/annual outputs
-- `content/logs/` — Logs
+- `content/briefs/` — Weekly briefs (`YYYY week N.md`)
+- `content/roundups/` — Monthly roundups (`YYYY-MM.md`)
+- `content/annual/` — Annual reviews (`YYYY review.md`)
+- `logs/` — Logs (at vault root; e.g. topic_actions_*.json, roundup logs)
 - `content/topics/` — Optional digital garden for topic redundancy and gardener
 
 **Industry backends** (weekly run)

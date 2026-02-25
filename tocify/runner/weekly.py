@@ -1590,7 +1590,9 @@ def run_weekly(
         md = render_brief_md(result, items_by_id, kept, topic, min_score_read=MIN_SCORE_READ)
         allowed_heading_url_index = _build_weekly_allowed_url_index(kept, items_by_id)
         link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
-        gardener_source_url_index = _build_allowed_url_index_from_link_rows(link_rows)
+        # Include all topic URLs from CSV (existing briefs) plus this run's link rows for gardener allowlist
+        gardener_source_url_index = {u: u for u in briefs_urls}
+        gardener_source_url_index.update(_build_allowed_url_index_from_link_rows(link_rows))
         try:
             md, link_stats = _resolve_weekly_heading_links(md, brief_filename, link_rows)
             print(
