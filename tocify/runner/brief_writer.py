@@ -13,7 +13,7 @@ from tocify.runner.link_hygiene import build_allowed_url_index, is_valid_http_ur
 
 
 def weekly_brief_title(topic: str, week_of: str) -> str:
-    """Canonical title for a weekly brief (body H1 and frontmatter)."""
+    """Canonical title for a weekly brief body H1."""
     return f"{topic.upper()} Weekly Brief (week of {week_of})"
 
 
@@ -31,16 +31,13 @@ def render_brief_md(
     min_score_read: float,
     title_override: str | None = None,
 ) -> str:
-    """Render triage result and kept items to weekly brief markdown with frontmatter.
-
-    If title_override is set (e.g. brief_path.stem), frontmatter title uses it; body H1 stays human-readable.
-    """
+    """Render triage result and kept items to weekly brief markdown with frontmatter."""
+    _ = title_override  # Backward-compat parameter; weekly frontmatter no longer writes "title".
     week_of = result["week_of"]
     notes = result.get("notes", "").strip()
     ranked = result.get("ranked", [])
     today = datetime.now(timezone.utc).date().isoformat()
     display_title = weekly_brief_title(topic, week_of)
-    frontmatter_title = title_override if title_override is not None else display_title
     triage_backend = str(result.get("triage_backend") or "unknown")
     triage_model = str(result.get("triage_model") or "unknown")
 
@@ -60,7 +57,6 @@ def render_brief_md(
     lines.extend(render_brief_entry_blocks(kept, items_by_id).splitlines())
     body = "\n".join(lines)
     frontmatter = {
-        "title": frontmatter_title,
         "date": week_of,
         "date created": _weekly_date_created_utc(week_of),
         "lastmod": today,

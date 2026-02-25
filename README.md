@@ -108,10 +108,10 @@ bioRxiv neuroscience | https://www.biorxiv.org/rss/subject/neuroscience.xml
 Newly generated Markdown files include YAML frontmatter with Quartz-compatible keys and tocify metadata.
 
 Core keys:
-- `title`
 - `date`
 - `lastmod`
 - `tags` (AI-suggested, normalized)
+- `title` (used by `digest.md`, monthly/annual outputs, and topic pages; runner weekly briefs omit it)
 
 Additional metadata:
 - `generator`, `period`, `topic`
@@ -119,7 +119,7 @@ Additional metadata:
 - triage provenance: `triage_backend`, `triage_model` (and `triage_backends` / `triage_models` when mixed)
 - per-file stats where applicable (`included`, `scored`, etc.)
 
-This applies to newly generated outputs (`digest.md`, weekly briefs, monthly roundups, annual reviews, topic gardener pages). Existing files are not backfilled automatically.
+This applies to newly generated outputs (`digest.md`, weekly briefs, monthly roundups, annual reviews, topic gardener pages). Existing files are not backfilled automatically, and runner weekly briefs intentionally do not add a `title` key.
 
 ---
 

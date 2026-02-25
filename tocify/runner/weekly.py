@@ -1434,7 +1434,6 @@ def run_weekly(
             f"_No RSS items found in the last {LOOKBACK_DAYS} days._\n"
         )
         no_items_frontmatter = {
-            "title": brief_path.stem,
             "date": week_of,
             "date created": f"{week_of} 00:00:00",
             "lastmod": datetime.now(timezone.utc).date().isoformat(),
@@ -1582,7 +1581,6 @@ def run_weekly(
         merged_frontmatter = _merge_brief_frontmatter(
             existing_frontmatter, kept, merged_included, merged_scored
         )
-        merged_frontmatter["title"] = brief_path.stem
         existing_link_rows = load_brief_link_rows(paths.briefs_articles_csv, brief_filename)
         new_link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
         link_rows = existing_link_rows + new_link_rows
@@ -1618,7 +1616,6 @@ def run_weekly(
     else:
         md = render_brief_md(
             result, items_by_id, kept, topic, min_score_read=MIN_SCORE_READ,
-            title_override=brief_path.stem,
         )
         allowed_heading_url_index = _build_weekly_allowed_url_index(kept, items_by_id)
         link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
