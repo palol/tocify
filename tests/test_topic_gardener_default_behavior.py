@@ -1,20 +1,14 @@
-import importlib.util
 import os
-import sys
 import tempfile
 import types
 import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from tests.runner_test_utils import write_runner_inputs
+from tests.runner_test_utils import load_weekly_module_for_tests, write_runner_inputs
 
 
 def _load_weekly_module():
-    tocify_mod = types.ModuleType("tocify")
-    runner_mod = types.ModuleType("tocify.runner")
-    vault_mod = types.ModuleType("tocify.runner.vault")
-
     def get_topic_paths(topic: str, vault_root: Path | None = None):
         root = Path(vault_root or ".")
         return types.SimpleNamespace(
@@ -26,75 +20,41 @@ def _load_weekly_module():
             annual_dir=root / "content" / "annual",
             logs_dir=root / "logs",
             briefs_articles_csv=root / "content" / "briefs_articles.csv",
+            edgar_ciks_path=root / "config" / f"edgar_ciks.{topic}.txt",
+            newsrooms_path=root / "config" / f"newsrooms.{topic}.txt",
         )
 
-    vault_mod.get_topic_paths = get_topic_paths
-    vault_mod.VAULT_ROOT = Path(".")
-    vault_mod.run_structured_prompt = lambda *_args, **_kwargs: {}
-
-    tocify_mod.parse_interests_md = lambda _text: {"keywords": []}
-    tocify_mod.load_feeds = lambda _path: []
-    tocify_mod.get_triage_runtime_metadata = lambda: {"triage_backend": "openai", "triage_model": "gpt-4o"}
-    tocify_mod.fetch_rss_items = lambda _feeds, end_date=None: [
-        {
-            "id": "item-1",
-            "title": "Paper A",
-            "link": "https://example.com/a",
-            "source": "Journal A",
-            "published_utc": "2026-02-16T00:00:00+00:00",
-            "summary": "Summary A",
-        }
-    ]
-    tocify_mod.keyword_prefilter = lambda items, _keywords, keep_top=200: items
-    tocify_mod.get_triage_backend_with_metadata = lambda: (
-        lambda *_args, **_kwargs: None,
-        {"triage_backend": "openai", "triage_model": "gpt-4o"},
+    module, _ = load_weekly_module_for_tests(
+        module_name="weekly_default_behavior_under_test",
+        get_topic_paths=get_topic_paths,
+        tocify_overrides={
+            "fetch_rss_items": lambda _feeds, end_date=None: [
+                {
+                    "id": "item-1",
+                    "title": "Paper A",
+                    "link": "https://example.com/a",
+                    "source": "Journal A",
+                    "published_utc": "2026-02-16T00:00:00+00:00",
+                    "summary": "Summary A",
+                }
+            ],
+            "triage_in_batches": lambda _interests, _items, _batch, _triage_fn: {
+                "notes": "Weekly notes.",
+                "ranked": [
+                    {
+                        "id": "item-1",
+                        "title": "Paper A",
+                        "link": "https://example.com/a",
+                        "source": "Journal A",
+                        "published_utc": "2026-02-16T00:00:00+00:00",
+                        "score": 0.9,
+                        "why": "Relevant.",
+                        "tags": ["Neuro"],
+                    }
+                ],
+            },
+        },
     )
-    tocify_mod.triage_in_batches = lambda _interests, _items, _batch, _triage_fn: {
-        "notes": "Weekly notes.",
-        "ranked": [
-            {
-                "id": "item-1",
-                "title": "Paper A",
-                "link": "https://example.com/a",
-                "source": "Journal A",
-                "published_utc": "2026-02-16T00:00:00+00:00",
-                "score": 0.9,
-                "why": "Relevant.",
-                "tags": ["Neuro"],
-            }
-        ],
-    }
-
-    dotenv_mod = types.ModuleType("dotenv")
-    dotenv_mod.load_dotenv = lambda *args, **kwargs: None
-    newspaper_mod = types.ModuleType("newspaper")
-    newspaper_mod.Article = object
-
-    frontmatter_path = Path(__file__).resolve().parents[1] / "tocify" / "frontmatter.py"
-    fm_spec = importlib.util.spec_from_file_location("tocify.frontmatter", frontmatter_path)
-    frontmatter_mod = importlib.util.module_from_spec(fm_spec)
-    assert fm_spec and fm_spec.loader
-    fm_spec.loader.exec_module(frontmatter_mod)
-    link_hygiene_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "link_hygiene.py"
-    lh_spec = importlib.util.spec_from_file_location("tocify.runner.link_hygiene", link_hygiene_path)
-    link_hygiene_mod = importlib.util.module_from_spec(lh_spec)
-    assert lh_spec and lh_spec.loader
-    lh_spec.loader.exec_module(link_hygiene_mod)
-
-    sys.modules["tocify"] = tocify_mod
-    sys.modules["tocify.runner"] = runner_mod
-    sys.modules["tocify.runner.vault"] = vault_mod
-    sys.modules["tocify.runner.link_hygiene"] = link_hygiene_mod
-    sys.modules["tocify.frontmatter"] = frontmatter_mod
-    sys.modules["dotenv"] = dotenv_mod
-    sys.modules["newspaper"] = newspaper_mod
-
-    weekly_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "weekly.py"
-    spec = importlib.util.spec_from_file_location("weekly_default_behavior_under_test", weekly_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    spec.loader.exec_module(module)
     return module
 
 
@@ -154,6 +114,71 @@ class TopicGardenerDefaultBehaviorTests(unittest.TestCase):
             write_runner_inputs(root)
             weekly.run_weekly(topic="bci", week_spec="2026 week 8", dry_run=0, vault_root=root)
         weekly.run_topic_gardener.assert_not_called()
+
+    def test_run_weekly_gardener_allowlist_matches_new_link_rows(self) -> None:
+        weekly = _load_weekly_module()
+        weekly.TOPIC_REDUNDANCY_ENABLED = False
+        weekly.TOPIC_GARDENER_ENABLED = True
+        weekly.run_topic_gardener = Mock()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_runner_inputs(root)
+            weekly.run_weekly(topic="bci", week_spec="2026 week 8", dry_run=0, vault_root=root)
+
+        kwargs = weekly.run_topic_gardener.call_args.kwargs
+        allowed_source_url_index = kwargs["allowed_source_url_index"]
+        self.assertEqual(allowed_source_url_index, {"https://example.com/a": "https://example.com/a"})
+
+    def test_run_weekly_merge_gardener_allowlist_includes_existing_and_new_rows(self) -> None:
+        weekly = _load_weekly_module()
+        weekly.TOPIC_REDUNDANCY_ENABLED = False
+        weekly.TOPIC_GARDENER_ENABLED = True
+        weekly.run_topic_gardener = Mock()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_runner_inputs(root)
+            briefs_dir = root / "content" / "briefs"
+            briefs_dir.mkdir(parents=True, exist_ok=True)
+            brief_path = briefs_dir / "2026-02-16_bci_weekly-brief.md"
+            brief_path.write_text(
+                (
+                    "---\n"
+                    "title: \"BCI Weekly Brief (week of 2026-02-16)\"\n"
+                    "date: \"2026-02-16\"\n"
+                    "lastmod: \"2026-02-16\"\n"
+                    "included: 1\n"
+                    "scored: 1\n"
+                    "---\n"
+                    "# BCI Weekly Brief (week of 2026-02-16)\n\n"
+                    "**Included:** 1 (score ≥ 0.55)  \n"
+                    "**Scored:** 1 total items\n\n"
+                    "---\n\n"
+                    "## [Existing item](https://example.com/old)\n\n"
+                    "---\n"
+                ),
+                encoding="utf-8",
+            )
+            csv_path = root / "content" / "briefs_articles.csv"
+            csv_path.parent.mkdir(parents=True, exist_ok=True)
+            csv_path.write_text(
+                (
+                    "topic,week_of,url,title,source,published_utc,score,brief_filename,why,tags\n"
+                    "bci,2026-02-16,https://example.com/old,Existing item,Journal,2026-02-16T00:00:00+00:00,0.80,"
+                    "2026-02-16_bci_weekly-brief.md,Relevant,old\n"
+                ),
+                encoding="utf-8",
+            )
+
+            weekly.run_weekly(topic="bci", week_spec="2026 week 8", dry_run=0, vault_root=root)
+
+        kwargs = weekly.run_topic_gardener.call_args.kwargs
+        allowed_source_url_index = kwargs["allowed_source_url_index"]
+        self.assertEqual(
+            set(allowed_source_url_index.values()),
+            {"https://example.com/old", "https://example.com/a"},
+        )
 
 
 if __name__ == "__main__":

@@ -1,28 +1,38 @@
-"""Weekly digest for one topic: fetch (tocify), prefilter, triage, topic redundancy, gardener, brief + CSV."""
+"""Weekly digest for one topic: fetch (tocify), prefilter, topic redundancy, triage, gardener, brief + CSV."""
 
 import csv
 import json
 import os
 import re
 import sys
-import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 
+import tocify
 from dotenv import load_dotenv
 from newspaper import Article
 from tqdm import tqdm
 
-import tocify
-import importlib.util
-
+from tocify.config import env_bool, env_int, load_pipeline_config
 from tocify.frontmatter import (
-    aggregate_ranked_item_tags,
     normalize_ai_tags,
     split_frontmatter_and_body,
     with_frontmatter,
 )
+from tocify.runner.brief_writer import (
+    build_allowed_url_index_from_link_rows as _build_allowed_url_index_from_link_rows,
+    build_weekly_allowed_url_index as _build_weekly_allowed_url_index,
+    build_weekly_link_metadata_rows as _build_weekly_link_metadata_rows,
+    merge_brief_frontmatter as _merge_brief_frontmatter,
+    parse_brief_body_into_header_and_entries as _parse_brief_body_into_header_and_entries,
+    render_brief_entry_blocks as _render_brief_entry_blocks,
+    render_brief_md,
+    resolve_weekly_heading_links as _resolve_weekly_heading_links,
+    update_brief_header_counts as _update_brief_header_counts,
+    weekly_brief_title as _weekly_brief_title,
+)
+from tocify.runner.clear import clean_stray_action_json_in_logs
 from tocify.runner.link_hygiene import (
     _dedupe_urls,
     build_allowed_url_index,
@@ -31,27 +41,32 @@ from tocify.runner.link_hygiene import (
     normalize_url_for_match,
     sanitize_markdown_links,
 )
-from tocify.runner.vault import VAULT_ROOT, get_topic_paths, run_structured_prompt
 from tocify.runner._utils import string_list as _string_list
+from tocify.runner.vault import VAULT_ROOT, get_topic_paths, run_structured_prompt
 
 load_dotenv()
 
 # Env (same names as neural-noise / tocify)
-MAX_ITEMS_PER_FEED = int(os.getenv("MAX_ITEMS_PER_FEED", "50"))
-MAX_TOTAL_ITEMS = int(os.getenv("MAX_TOTAL_ITEMS", "400"))
-LOOKBACK_DAYS = int(os.getenv("LOOKBACK_DAYS", "7"))
-SUMMARY_MAX_CHARS = int(os.getenv("SUMMARY_MAX_CHARS", "500"))
-PREFILTER_KEEP_TOP = int(os.getenv("PREFILTER_KEEP_TOP", "200"))
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "50"))
-MIN_SCORE_READ = float(os.getenv("MIN_SCORE_READ", "0.65"))
-MAX_RETURNED = int(os.getenv("MAX_RETURNED", "40"))
-USE_NEWSPAPER = os.getenv("USE_NEWSPAPER", "0").strip().lower() in ("1", "true", "yes")
-NEWSPAPER_MAX_ITEMS = int(os.getenv("NEWSPAPER_MAX_ITEMS", "100"))
-NEWSPAPER_TIMEOUT = int(os.getenv("NEWSPAPER_TIMEOUT", "10"))
-TOPIC_REDUNDANCY_ENABLED = os.getenv("TOPIC_REDUNDANCY", "1").strip().lower() in ("1", "true", "yes")
-TOPIC_REDUNDANCY_LOOKBACK_DAYS = int(os.getenv("TOPIC_REDUNDANCY_LOOKBACK_DAYS", "56"))
-TOPIC_REDUNDANCY_BATCH_SIZE = int(os.getenv("TOPIC_REDUNDANCY_BATCH_SIZE", "25"))
-TOPIC_GARDENER_ENABLED = os.getenv("TOPIC_GARDENER", "1").strip().lower() in ("1", "true", "yes")
+PIPELINE_CONFIG = load_pipeline_config()
+MAX_ITEMS_PER_FEED = PIPELINE_CONFIG.max_items_per_feed
+MAX_TOTAL_ITEMS = PIPELINE_CONFIG.max_total_items
+LOOKBACK_DAYS = PIPELINE_CONFIG.lookback_days
+SUMMARY_MAX_CHARS = PIPELINE_CONFIG.summary_max_chars
+PREFILTER_KEEP_TOP = PIPELINE_CONFIG.prefilter_keep_top
+BATCH_SIZE = PIPELINE_CONFIG.batch_size
+MIN_SCORE_READ = PIPELINE_CONFIG.min_score_read
+MAX_RETURNED = PIPELINE_CONFIG.max_returned
+USE_NEWSPAPER = env_bool("USE_NEWSPAPER", False)
+NEWSPAPER_MAX_ITEMS = env_int("NEWSPAPER_MAX_ITEMS", 100)
+NEWSPAPER_TIMEOUT = env_int("NEWSPAPER_TIMEOUT", 10)
+NEWSPAPER_MAX_WORKERS = max(1, min(env_int("NEWSPAPER_MAX_WORKERS", 3), 10))
+TOPIC_REDUNDANCY_ENABLED = env_bool("TOPIC_REDUNDANCY", True)
+TOPIC_REDUNDANCY_LOOKBACK_DAYS = env_int("TOPIC_REDUNDANCY_LOOKBACK_DAYS", 56)
+TOPIC_REDUNDANCY_BATCH_SIZE = env_int("TOPIC_REDUNDANCY_BATCH_SIZE", 25)
+TOPIC_GARDENER_ENABLED = env_bool("TOPIC_GARDENER", True)
+MAX_RANKED_TAGS = 8
+MAX_RANKED_TAG_CHARS = 40
+MAX_RANKED_WHY_CHARS = 320
 
 BRIEFS_ARTICLES_COLUMNS = [
     "topic", "week_of", "url", "title", "source", "published_utc", "score", "brief_filename",
@@ -61,6 +76,124 @@ BRIEFS_ARTICLES_COLUMNS = [
 FOOTNOTE_DEF_LINE_RE = re.compile(r"^\[\^(\d+)\]:\s*(\S+)\s*$")
 FOOTNOTE_MARKER_RE = re.compile(r"\[\^(\d+)\]")
 MENTIONS_SUFFIX_RE = re.compile(r"\s*_\(\s*mentions:\s*\d+\s+sources?\s*\)_\s*$", re.IGNORECASE)
+
+
+def _normalize_ranked_text(value: object) -> str:
+    """Normalize free-text model output to a single paragraph with compact whitespace."""
+    return re.sub(r"\s+", " ", str(value or "").strip())
+
+
+def _normalize_ranked_score(raw_score: object) -> tuple[float | None, bool]:
+    """Normalize score to 0..1. Return (score or None, converted_legacy_percent)."""
+    try:
+        score = float(raw_score)
+    except (TypeError, ValueError):
+        return None, False
+    converted_legacy_percent = False
+    if 1 < score <= 100:
+        score = score / 100.0
+        converted_legacy_percent = True
+    if score < 0 or score > 1:
+        return None, converted_legacy_percent
+    return score, converted_legacy_percent
+
+
+def _sanitize_ranked_tags(raw_tags: object) -> tuple[list[str], int]:
+    """Trim/dedupe/cap ranked tags. Returns (tags, trim_counter_increment)."""
+    raw_values = raw_tags if isinstance(raw_tags, list) else []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    trimmed = 0
+    for idx, raw in enumerate(raw_values):
+        tag = _normalize_ranked_text(raw)
+        if not tag:
+            if str(raw or "").strip():
+                trimmed += 1
+            continue
+        if len(tag) > MAX_RANKED_TAG_CHARS:
+            tag = tag[:MAX_RANKED_TAG_CHARS].rstrip()
+            trimmed += 1
+        if not tag:
+            trimmed += 1
+            continue
+        key = tag.casefold()
+        if key in seen:
+            trimmed += 1
+            continue
+        seen.add(key)
+        normalized.append(tag)
+        if len(normalized) >= MAX_RANKED_TAGS:
+            trimmed += max(0, len(raw_values) - idx - 1)
+            break
+    return normalized, trimmed
+
+
+def normalize_ranked_items(ranked: list[dict], items_by_id: dict[str, dict]) -> tuple[list[dict], dict[str, int]]:
+    """Normalize and canonicalize ranked items before filtering/rendering/writes."""
+    counters = {
+        "dropped_invalid_id": 0,
+        "dropped_invalid_score": 0,
+        "score_legacy_percent_converted": 0,
+        "why_trimmed": 0,
+        "tags_trimmed": 0,
+        "duplicate_id_resolved": 0,
+    }
+    deduped_by_id: dict[str, dict] = {}
+
+    for raw in ranked if isinstance(ranked, list) else []:
+        if not isinstance(raw, dict):
+            counters["dropped_invalid_id"] += 1
+            continue
+
+        row_id = str(raw.get("id") or "").strip()
+        source_item = items_by_id.get(row_id)
+        if not row_id or not source_item:
+            counters["dropped_invalid_id"] += 1
+            continue
+
+        score, converted_legacy_percent = _normalize_ranked_score(raw.get("score"))
+        if converted_legacy_percent:
+            counters["score_legacy_percent_converted"] += 1
+        if score is None:
+            counters["dropped_invalid_score"] += 1
+            continue
+
+        why = _normalize_ranked_text(raw.get("why") or "")
+        if len(why) > MAX_RANKED_WHY_CHARS:
+            why = why[:MAX_RANKED_WHY_CHARS].rstrip()
+            counters["why_trimmed"] += 1
+
+        tags, tags_trimmed = _sanitize_ranked_tags(raw.get("tags"))
+        counters["tags_trimmed"] += tags_trimmed
+
+        published = source_item.get("published_utc")
+        if published is None:
+            published = raw.get("published_utc")
+        if published is None:
+            published_utc = None
+        else:
+            published_utc = str(published).strip() or None
+
+        normalized = {
+            "id": row_id,
+            "title": str(source_item.get("title") or raw.get("title") or "").strip(),
+            "link": str(source_item.get("link") or raw.get("link") or "").strip(),
+            "source": str(source_item.get("source") or raw.get("source") or "").strip(),
+            "published_utc": published_utc,
+            "score": score,
+            "why": why,
+            "tags": tags,
+        }
+
+        previous = deduped_by_id.get(row_id)
+        if previous is None:
+            deduped_by_id[row_id] = normalized
+            continue
+        counters["duplicate_id_resolved"] += 1
+        if score >= float(previous["score"]):
+            deduped_by_id[row_id] = normalized
+
+    return list(deduped_by_id.values()), counters
 
 
 def parse_week_spec(s: str) -> str:
@@ -81,7 +214,7 @@ def load_briefs_articles_urls(csv_path: Path, topic: str | None = None) -> set[s
     seen = set()
     if not csv_path.exists():
         return seen
-    with open(csv_path, "r", newline="", encoding="utf-8") as f:
+    with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames or []
         if "url" not in fieldnames:
@@ -101,7 +234,7 @@ def load_brief_link_rows(csv_path: Path, brief_filename: str) -> list[dict]:
     rows: list[dict] = []
     if not csv_path.exists():
         return rows
-    with open(csv_path, "r", newline="", encoding="utf-8") as f:
+    with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames or []
         if "brief_filename" not in fieldnames or "url" not in fieldnames:
@@ -133,6 +266,53 @@ def load_recent_topic_files(topics_dir: Path, max_age_days: int) -> list[Path]:
             continue
     out.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return out
+
+
+def load_topic_files_single_pass(
+    topics_dir: Path,
+    max_age_days: int,
+    max_preview_chars: int = 400,
+) -> tuple[str, list[dict]]:
+    """One pass over topic dir: glob, stat, read each file once. Return (topic_refs for recent, existing_topics for all)."""
+    if not topics_dir.exists():
+        return "(no readable topic content)", []
+    now = datetime.now(timezone.utc)
+    cutoff_ts = (now - timedelta(days=max_age_days)).timestamp() if max_age_days > 0 else 0
+    # (path, mtime, text)
+    files: list[tuple[Path, float, str]] = []
+    for p in sorted(topics_dir.glob("*.md")):
+        if not p.is_file():
+            continue
+        try:
+            st = p.stat()
+            text = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        files.append((p, st.st_mtime, text))
+    # existing_topics: all files, slug + preview
+    existing_topics: list[dict] = []
+    ref_parts: list[str] = []
+    # recent: mtime >= cutoff, sorted by mtime desc
+    recent = [(p, mtime, text) for p, mtime, text in files if mtime >= cutoff_ts]
+    recent.sort(key=lambda x: x[1], reverse=True)
+    for p, _mtime, text in files:
+        slug = p.stem
+        preview = text.strip()[:max_preview_chars]
+        if len(text.strip()) > max_preview_chars:
+            preview += "…"
+        existing_topics.append({"slug": slug, "preview": preview})
+    for p, _mtime, text in recent:
+        _, body = split_frontmatter_and_body(text)
+        sanitized = _sanitize_topic_body_for_redundancy(body)
+        if not sanitized:
+            continue
+        ref_parts.append(
+            f"[BEGIN TOPIC: {p.stem} @ {p.resolve()}]\n"
+            f"{sanitized}\n"
+            f"[END TOPIC: {p.stem}]"
+        )
+    topic_refs = "\n\n".join(ref_parts) if ref_parts else "(no readable topic content)"
+    return topic_refs, existing_topics
 
 
 def enrich_item_with_newspaper(item: dict, timeout: int) -> dict:
@@ -242,14 +422,20 @@ def _render_topic_refs_for_redundancy(topic_paths: list[Path]) -> str:
 
 
 def _call_cursor_topic_redundancy(
-    topic_paths: list[Path], items: list[dict], allowed_source_url_index: dict[str, str] | None = None
+    topic_paths: list[Path],
+    items: list[dict],
+    allowed_source_url_index: dict[str, str] | None = None,
+    topic_refs: str | None = None,
 ) -> tuple[set[str], list[dict]]:
     """Call Cursor to flag items redundant vs existing topic pages; return (redundant ids, mentions)."""
-    if not topic_paths or not items:
+    if not items:
         return set(), []
+    if topic_refs is None:
+        if not topic_paths:
+            return set(), []
+        topic_refs = _render_topic_refs_for_redundancy(topic_paths) or "(no readable topic content)"
     if allowed_source_url_index is None:
         allowed_source_url_index = _build_allowed_source_url_index(items)
-    topic_refs = _render_topic_refs_for_redundancy(topic_paths) or "(no readable topic content)"
     lean_items = [
         {
             "id": it["id"],
@@ -340,9 +526,16 @@ def filter_topic_redundant_items(
     items: list[dict],
     batch_size: int,
     allowed_source_url_index: dict[str, str] | None = None,
+    topic_refs: str | None = None,
 ) -> tuple[list[dict], int, list[dict]]:
     """Filter items that are redundant vs existing topic pages; return (kept, num_removed, mentions)."""
-    if not topic_paths or not items:
+    if not items:
+        return items, 0, []
+    if topic_refs is None or not topic_refs.strip() or topic_refs == "(no readable topic content)":
+        if not topic_paths:
+            return items, 0, []
+        topic_refs = _render_topic_refs_for_redundancy(topic_paths) or "(no readable topic content)"
+    if topic_refs == "(no readable topic content)":
         return items, 0, []
     if allowed_source_url_index is None:
         allowed_source_url_index = _build_allowed_source_url_index(items)
@@ -351,7 +544,7 @@ def filter_topic_redundant_items(
     for i in range(0, len(items), batch_size):
         batch = items[i : i + batch_size]
         redundant, mentions = _call_cursor_topic_redundancy(
-            topic_paths, batch, allowed_source_url_index=allowed_source_url_index
+            topic_paths, batch, allowed_source_url_index=allowed_source_url_index, topic_refs=topic_refs
         )
         all_redundant |= redundant
         all_mentions.extend([m for m in mentions if str(m.get("id") or "").strip() in redundant])
@@ -364,14 +557,20 @@ TOPIC_GARDENER_PROMPT = """You are curating a **global digital garden** of everg
 
 Below are (1) this week's weekly brief, and (2) existing topic files. Propose **create** or **update** actions.
 
+Return only the JSON object; we will create or update topic files from it. Do not write to any file path.
+
 Rules:
 - **create**: New topic when the brief introduces a distinct theme. Use lowercase-hyphen slug. Include title, body_markdown, sources, links_to, tags.
-  - `body_markdown` must be a **fact bullet list** (`- Fact...`), not prose paragraphs.
+  - When the brief mentions a **tracked company** (see list below), prefer creating a topic page for that company if one does not exist.
+  - `body_markdown` must be a **fact bullet list** (`- Fact...`), not prose paragraphs. Write the actual fact bullets drawn from the brief, not a description of what to add.
 - **update**: Only when the brief adds genuinely new knowledge to an existing topic. Provide slug, append_sources, optionally summary_addendum, summary_addendum_sources, and tags.
-  - `summary_addendum` must be a **fact bullet list** (`- Fact...`) when present.
+  - `summary_addendum` must be a **fact bullet list** (`- Fact...`) when present. Write the actual fact bullets, not a description of what to add.
 - Each bullet in `summary_addendum` must map to exactly one source URL in `summary_addendum_sources` (same order, same length).
 - Use source attribution with markdown footnotes, e.g. [^1] and [^1]: https://example.com.
 - If no new knowledge is present, do not emit an update action.
+
+Tracked companies (strong candidates for new topic pages when mentioned in the brief):
+{tracked_companies}
 
 This week's brief (category: {topic}):
 {brief_content}
@@ -414,6 +613,7 @@ TOPIC_GARDENER_SCHEMA = {
                     "links_to",
                     "append_sources",
                     "summary_addendum",
+                    "summary_addendum_sources",
                     "tags",
                 ],
                 "additionalProperties": False,
@@ -658,7 +858,7 @@ def _attach_sources_to_bullets(
     url_to_idx = {url: idx for idx, url in updated_defs.items()}
     lines: list[str] = []
     used_sources: list[str] = []
-    for bullet, source_url in zip(summary_bullets, bullet_sources):
+    for bullet, source_url in zip(summary_bullets, bullet_sources, strict=True):
         clean_bullet = FOOTNOTE_MARKER_RE.sub("", bullet).strip()
         source = str(source_url or "").strip()
         if not source:
@@ -866,15 +1066,23 @@ def _list_existing_topic_previews(topics_dir: Path, max_preview_chars: int = 400
     return out
 
 
-def _call_cursor_topic_gardener(brief_content: str, existing_topics: list[dict], topic: str) -> list[dict]:
+def _call_cursor_topic_gardener(
+    brief_content: str,
+    existing_topics: list[dict],
+    topic: str,
+    *,
+    tracked_companies: list[str] | None = None,
+) -> list[dict]:
     """Call Cursor to suggest create/update topic actions from brief content and existing topic previews."""
     existing_str = "\n\n".join(
         f"- **{t['slug']}**:\n{t['preview']}" for t in existing_topics
     ) or "(no existing topics yet)"
+    companies_str = ", ".join((tracked_companies or [])[:100]) or "(none)"
     prompt = TOPIC_GARDENER_PROMPT.format(
         topic=topic,
         brief_content=brief_content,
         existing_topics=existing_str,
+        tracked_companies=companies_str,
     )
     try:
         parsed = run_structured_prompt(
@@ -1003,6 +1211,8 @@ def run_topic_gardener(
     logs_dir: Path | None = None,
     week_of: str | None = None,
     allowed_source_url_index: dict[str, str] | None = None,
+    existing_topics: list[dict] | None = None,
+    tracked_companies: list[str] | None = None,
 ) -> None:
     """Run topic gardener on a brief: suggest create/update topic pages and apply actions under topics_dir."""
     topics_dir.mkdir(parents=True, exist_ok=True)
@@ -1010,10 +1220,16 @@ def run_topic_gardener(
         return
     brief_content = brief_path.read_text(encoding="utf-8")
     brief_meta = _extract_brief_metadata(brief_path)
-    existing_topics = _list_existing_topic_previews(topics_dir)
+    if existing_topics is None:
+        existing_topics = _list_existing_topic_previews(topics_dir)
     disable = not sys.stderr.isatty()
     with tqdm(desc="Topic gardener (agent)", total=None, unit="", disable=disable):
-        actions = _call_cursor_topic_gardener(brief_content, existing_topics, topic)
+        actions = _call_cursor_topic_gardener(
+            brief_content,
+            existing_topics,
+            topic,
+            tracked_companies=tracked_companies,
+        )
     if logs_dir is not None and week_of is not None:
         logs_dir.mkdir(parents=True, exist_ok=True)
         out_path = logs_dir / f"topic_actions_{week_of}_{topic}.json"
@@ -1042,194 +1258,6 @@ def run_topic_gardener(
 
     if applied > 0:
         tqdm.write(f"Topic gardener: applied {applied} topic action(s) under {topics_dir}")
-
-
-def _weekly_brief_title(topic: str, week_of: str) -> str:
-    """Canonical title for a weekly brief (body H1 and frontmatter)."""
-    return f"{topic.upper()} Weekly Brief (week of {week_of})"
-
-
-def render_brief_md(
-    result: dict, items_by_id: dict[str, dict], kept: list[dict], topic: str
-) -> str:
-    """Render triage result and kept items to weekly brief markdown with frontmatter."""
-    week_of = result["week_of"]
-    notes = result.get("notes", "").strip()
-    ranked = result.get("ranked", [])
-    today = datetime.now(timezone.utc).date().isoformat()
-    title = _weekly_brief_title(topic, week_of)
-    triage_backend = str(result.get("triage_backend") or "unknown")
-    triage_model = str(result.get("triage_model") or "unknown")
-
-    lines = [f"# {title}", ""]
-    if notes:
-        lines += [notes, ""]
-    lines += [
-        f"**Included:** {len(kept)} (score ≥ {MIN_SCORE_READ:.2f})  ",
-        f"**Scored:** {len(ranked)} total items",
-        "",
-        "---",
-        "",
-    ]
-    if not kept:
-        return "\n".join(lines + ["_No items met the relevance threshold this week._", ""])
-
-    for r in kept:
-        it = items_by_id.get(r["id"], {})
-        tags = ", ".join(r.get("tags", [])) if r.get("tags") else ""
-        pub = r.get("published_utc")
-        summary = (it.get("summary") or "").strip()
-        lines += [
-            f"## [{r['title']}]({r['link']})",
-            f"*{r['source']}*  ",
-            f"Score: **{r['score']:.2f}**" + (f"  \nPublished: {pub}" if pub else ""),
-            (f"Tags: {tags}" if tags else ""),
-            "",
-            (r.get("why") or "").strip(),
-            "",
-        ]
-        if summary:
-            lines += ["<details>", "<summary>RSS summary</summary>", "", summary, "", "</details>", ""]
-        lines += ["---", ""]
-    body = "\n".join(lines)
-    frontmatter = {
-        "title": title,
-        "date": week_of,
-        "lastmod": today,
-        "tags": aggregate_ranked_item_tags(kept if kept else ranked),
-        "generator": "tocify-weekly",
-        "period": "weekly",
-        "topic": topic,
-        "week_of": week_of,
-        "included": len(kept),
-        "scored": len(ranked),
-        "triage_backend": triage_backend,
-        "triage_model": triage_model,
-    }
-    return with_frontmatter(body, frontmatter)
-
-
-# Used when merging new entries into an existing brief (update header counts)
-BRIEF_HEADER_INCLUDED_RE = re.compile(r"(\*\*Included:\*\*\s*)\d+")
-BRIEF_HEADER_SCORED_RE = re.compile(r"(\*\*Scored:\*\*\s*)\d+")
-
-
-def _parse_brief_body_into_header_and_entries(body: str) -> tuple[str, list[str]]:
-    """Split brief body into header (up to first ---) and list of entry blocks. New entries append after these."""
-    if not body or "\n---\n" not in body:
-        return body.strip(), []
-    parts = body.split("\n---\n")
-    header = (parts[0] or "").strip()
-    entry_blocks = [(p or "").strip() for p in parts[1:] if (p or "").strip()]
-    return header, entry_blocks
-
-
-def _update_brief_header_counts(header: str, merged_included: int, merged_scored: int) -> str:
-    """Replace **Included:** N and **Scored:** M in header with merged counts (deterministic)."""
-    header = BRIEF_HEADER_INCLUDED_RE.sub(rf"\g<1>{merged_included}", header)
-    header = BRIEF_HEADER_SCORED_RE.sub(rf"\g<1>{merged_scored}", header)
-    return header
-
-
-def _render_brief_entry_blocks(kept: list[dict], items_by_id: dict[str, dict]) -> str:
-    """Render only the entry blocks (## title, source, score, ... ---) for given kept items. Same format as render_brief_md."""
-    lines: list[str] = []
-    for r in kept:
-        it = items_by_id.get(r["id"], {})
-        tags = ", ".join(r.get("tags", [])) if r.get("tags") else ""
-        pub = r.get("published_utc")
-        summary = (it.get("summary") or "").strip()
-        lines += [
-            f"## [{r['title']}]({r['link']})",
-            f"*{r['source']}*  ",
-            f"Score: **{r['score']:.2f}**" + (f"  \nPublished: {pub}" if pub else ""),
-            (f"Tags: {tags}" if tags else ""),
-            "",
-            (r.get("why") or "").strip(),
-            "",
-        ]
-        if summary:
-            lines += ["<details>", "<summary>RSS summary</summary>", "", summary, "", "</details>", ""]
-        lines += ["---", ""]
-    return "\n".join(lines)
-
-
-def _merge_brief_frontmatter(
-    existing_frontmatter: dict,
-    new_kept: list[dict],
-    new_ranked: list,
-    merged_included: int,
-    merged_scored: int,
-) -> dict:
-    """Update frontmatter for merge: deterministic rules only. Other keys copied from existing."""
-    merged = dict(existing_frontmatter)
-    merged["included"] = merged_included
-    merged["scored"] = merged_scored
-    merged["lastmod"] = datetime.now(timezone.utc).date().isoformat()
-    existing_tags = normalize_ai_tags(_string_list(existing_frontmatter.get("tags")))
-    new_tags = aggregate_ranked_item_tags(new_kept) if new_kept else []
-    combined = _merge_unique(existing_tags + new_tags)
-    merged["tags"] = sorted(normalize_ai_tags(combined))
-    return merged
-
-
-def _build_allowed_url_index_from_link_rows(link_rows: list[dict]) -> dict[str, str]:
-    """Build allowed URL index from link metadata rows (for merge path)."""
-    urls = [str(r.get("url") or "").strip() for r in link_rows if r.get("url")]
-    return build_allowed_url_index(urls)
-
-
-def _load_weekly_link_resolver():
-    try:
-        from tocify.runner.link_resolution import resolve_weekly_heading_links
-
-        return resolve_weekly_heading_links
-    except Exception:
-        module_path = Path(__file__).resolve().with_name("link_resolution.py")
-        spec = importlib.util.spec_from_file_location("tocify_runner_link_resolution_runtime", module_path)
-        if spec is None or spec.loader is None:
-            raise RuntimeError(f"Failed to load link resolver module at {module_path}")
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module.resolve_weekly_heading_links
-
-
-def _build_weekly_link_metadata_rows(
-    brief_filename: str, kept: list[dict], items_by_id: dict[str, dict]
-) -> list[dict]:
-    rows: list[dict] = []
-    for ranked in kept:
-        item = items_by_id.get(ranked.get("id"), {})
-        title = str(ranked.get("title") or item.get("title") or "").strip()
-        if not title:
-            continue
-        canonical_url = str(item.get("link") or "").strip()
-        if not is_valid_http_url(canonical_url):
-            continue
-        rows.append(
-            {
-                "brief_filename": brief_filename,
-                "title": title,
-                "url": canonical_url,
-            }
-        )
-    return rows
-
-
-def _resolve_weekly_heading_links(md: str, brief_filename: str, rows: list[dict]) -> tuple[str, dict]:
-    """Canonicalize ## [Title](url) links in brief markdown using per-brief metadata rows."""
-    resolver = _load_weekly_link_resolver()
-    return resolver(md, brief_filename, rows)
-
-
-def _build_weekly_allowed_url_index(kept: list[dict], items_by_id: dict[str, dict]) -> dict[str, str]:
-    canonical_urls: list[str] = []
-    for ranked in kept:
-        item = items_by_id.get(ranked.get("id"), {})
-        link = str(item.get("link") or "").strip()
-        if link:
-            canonical_urls.append(link)
-    return build_allowed_url_index(canonical_urls)
 
 
 def append_briefs_articles(
@@ -1288,20 +1316,82 @@ def run_weekly(
 
     interests = tocify.parse_interests_md(paths.interests_path.read_text(encoding="utf-8"))
     feeds = tocify.load_feeds(str(paths.feeds_path))
+    topic_search = tocify.topic_search_string(interests)
 
     if week_spec is not None:
         week_of = parse_week_spec(week_spec)
-        end_date = datetime.strptime(week_of, "%Y-%m-%d").date()
+        week_start = datetime.strptime(week_of, "%Y-%m-%d").date()
+        week_end = week_start + timedelta(days=6)
     else:
         today = datetime.now(timezone.utc).date()
         week_of = date.fromisocalendar(
             today.isocalendar()[0], today.isocalendar()[1], 1
         ).isoformat()
-        end_date = None
+        week_start = today - timedelta(days=LOOKBACK_DAYS)
+        week_end = today
     triage_metadata = tocify.get_triage_runtime_metadata()
 
-    items = tocify.fetch_rss_items(feeds, end_date=end_date)
+    items = tocify.fetch_rss_items(feeds, end_date=week_end if week_spec is not None else None)
     print(f"Fetched {len(items)} RSS items (pre-filter) [topic={topic}]")
+
+    # OpenAlex and/or NewsAPI and/or Google News and/or ClinicalTrials/EDGAR/newsrooms for this week's date range
+    weekly_openalex = env_bool("WEEKLY_OPENALEX", True)
+    news_backend = (os.getenv("NEWS_BACKEND") or "").strip().lower()
+    add_google_news = env_bool("ADD_GOOGLE_NEWS", False)
+    add_clinical_trials = env_bool("ADD_CLINICAL_TRIALS", False)
+    add_edgar = env_bool("ADD_EDGAR", False)
+    add_newsrooms = env_bool("ADD_NEWSROOMS", False)
+    backends = []
+    if weekly_openalex and (topic_search or "").strip():
+        backends.append("openalex")
+    if news_backend == "newsapi":
+        backends.append("newsapi")
+    if add_google_news or news_backend == "googlenews":
+        backends.append("googlenews")
+    if add_clinical_trials:
+        backends.append("clinicaltrials")
+    if add_edgar:
+        backends.append("edgar")
+    if add_newsrooms:
+        backends.append("newsrooms")
+    googlenews_queries = tocify.topic_search_queries(interests) if "googlenews" in backends else None
+    clinicaltrials_query = (os.getenv("CLINICALTRIALS_QUERY") or "").strip() or topic_search or None
+    edgar_ciks = None
+    if "edgar" in backends and paths.edgar_ciks_path and paths.edgar_ciks_path.exists():
+        edgar_ciks = [
+            line.strip() for line in paths.edgar_ciks_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    if not edgar_ciks and "edgar" in backends:
+        raw = (os.getenv("EDGAR_CIKS") or "").strip()
+        edgar_ciks = [c.strip() for c in raw.split(",") if c.strip()] or None
+    newsrooms_urls = None
+    if "newsrooms" in backends and paths.newsrooms_path and paths.newsrooms_path.exists():
+        newsrooms_urls = [
+            line.strip() for line in paths.newsrooms_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    if not newsrooms_urls and "newsrooms" in backends:
+        raw = (os.getenv("NEWSROOMS_URLS") or "").strip()
+        newsrooms_urls = [u.strip() for u in raw.splitlines() if u.strip()] or None
+    if backends:
+        try:
+            extra = tocify.fetch_historical_items(
+                week_start,
+                week_end,
+                backends=backends,
+                openalex_search=topic_search or None,
+                news_query=topic_search or None,
+                googlenews_queries=googlenews_queries,
+                clinicaltrials_query=clinicaltrials_query,
+                edgar_ciks=edgar_ciks,
+                newsrooms_urls=newsrooms_urls,
+            )
+            if extra:
+                items = tocify.merge_feed_items(items, extra, max_items=MAX_TOTAL_ITEMS)
+                print(f"Added {len(extra)} items from {','.join(backends)} (merged total {len(items)}) [topic={topic}]")
+        except Exception as e:
+            tqdm.write(f"[WARN] Weekly fetch (historical backends) failed: {e}")
 
     paths.briefs_dir.mkdir(parents=True, exist_ok=True)
     paths.logs_dir.mkdir(parents=True, exist_ok=True)
@@ -1339,7 +1429,10 @@ def run_weekly(
         return
 
     items = tocify.keyword_prefilter(
-        items, interests["keywords"], keep_top=PREFILTER_KEEP_TOP
+        items,
+        interests["keywords"],
+        keep_top=PREFILTER_KEEP_TOP,
+        companies=interests.get("companies", []),
     )
     seen_norm = {}
     deduped = []
@@ -1362,14 +1455,21 @@ def run_weekly(
     topics_dir = root / "content" / "topics"
     allowed_source_url_index = _build_allowed_source_url_index(items)
     redundant_mentions: list[dict] = []
+    topic_data: tuple[str, list[dict]] | None = None
     if TOPIC_REDUNDANCY_ENABLED and items:
         topics_dir.mkdir(parents=True, exist_ok=True)
     if TOPIC_REDUNDANCY_ENABLED and topics_dir.exists() and items:
-        topic_paths = load_recent_topic_files(topics_dir, TOPIC_REDUNDANCY_LOOKBACK_DAYS)
-        if topic_paths:
-            print(f"Topic redundancy: checking {len(items)} items against {len(topic_paths)} topic file(s)")
+        topic_refs, existing_topics_for_gardener = load_topic_files_single_pass(
+            topics_dir, TOPIC_REDUNDANCY_LOOKBACK_DAYS
+        )
+        topic_data = (topic_refs, existing_topics_for_gardener)
+        if topic_refs and topic_refs != "(no readable topic content)":
+            n_recent = topic_refs.count("[BEGIN TOPIC:")
+            print(f"Topic redundancy: checking {len(items)} items against {n_recent} topic file(s)")
             items, dropped, redundant_mentions = filter_topic_redundant_items(
-                topic_paths, items, TOPIC_REDUNDANCY_BATCH_SIZE, allowed_source_url_index=allowed_source_url_index
+                [], items, TOPIC_REDUNDANCY_BATCH_SIZE,
+                allowed_source_url_index=allowed_source_url_index,
+                topic_refs=topic_refs,
             )
             if dropped > 0:
                 print(f"Topic redundancy: dropped {dropped} items, {len(items)} remaining")
@@ -1395,10 +1495,19 @@ def run_weekly(
     if USE_NEWSPAPER:
         to_enrich = items[:NEWSPAPER_MAX_ITEMS]
         disable_newspaper = not sys.stderr.isatty()
-        for i, it in enumerate(tqdm(to_enrich, desc="Newspaper", disable=disable_newspaper)):
-            enrich_item_with_newspaper(it, NEWSPAPER_TIMEOUT)
-            if i < len(to_enrich) - 1:
-                time.sleep(0.2)
+        workers = min(NEWSPAPER_MAX_WORKERS, len(to_enrich))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            list(
+                tqdm(
+                    ex.map(
+                        lambda it: enrich_item_with_newspaper(it, NEWSPAPER_TIMEOUT),
+                        to_enrich,
+                    ),
+                    total=len(to_enrich),
+                    desc="Newspaper",
+                    disable=disable_newspaper,
+                )
+            )
 
     items_by_id = {it["id"]: it for it in items}
 
@@ -1409,12 +1518,25 @@ def run_weekly(
     result["triage_backend"] = triage_metadata["triage_backend"]
     result["triage_model"] = triage_metadata["triage_model"]
 
-    ranked = result.get("ranked", [])
+    ranked_raw = result.get("ranked", [])
+    ranked, normalization_counters = normalize_ranked_items(ranked_raw, items_by_id)
+    result["ranked"] = ranked
+    print(
+        "Triage normalization: "
+        f"dropped_invalid_id={normalization_counters['dropped_invalid_id']}, "
+        f"dropped_invalid_score={normalization_counters['dropped_invalid_score']}, "
+        f"score_legacy_percent_converted={normalization_counters['score_legacy_percent_converted']}, "
+        f"why_trimmed={normalization_counters['why_trimmed']}, "
+        f"tags_trimmed={normalization_counters['tags_trimmed']}, "
+        f"duplicate_id_resolved={normalization_counters['duplicate_id_resolved']}"
+    )
     kept = [r for r in ranked if r["score"] >= MIN_SCORE_READ][:MAX_RETURNED]
 
     if not kept and brief_path.exists():
         print("No items met threshold this run; preserving existing brief.")
         return
+
+    gardener_source_url_index: dict[str, str] = {}
 
     if kept and brief_path.exists():
         # Merge: append new entries to bottom; deterministic frontmatter updates
@@ -1432,12 +1554,13 @@ def run_weekly(
         else:
             merged_body = header + "\n---\n\n" + new_entries_md
         merged_frontmatter = _merge_brief_frontmatter(
-            existing_frontmatter, kept, ranked, merged_included, merged_scored
+            existing_frontmatter, kept, merged_included, merged_scored
         )
         existing_link_rows = load_brief_link_rows(paths.briefs_articles_csv, brief_filename)
         new_link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
         link_rows = existing_link_rows + new_link_rows
         allowed_heading_url_index = _build_allowed_url_index_from_link_rows(link_rows)
+        gardener_source_url_index = allowed_heading_url_index
         md = with_frontmatter(merged_body, merged_frontmatter)
         try:
             md, link_stats = _resolve_weekly_heading_links(md, brief_filename, link_rows)
@@ -1464,9 +1587,10 @@ def run_weekly(
         brief_path.write_text(md, encoding="utf-8")
         print(f"Merged {len(kept)} new entries into {brief_path}")
     else:
-        md = render_brief_md(result, items_by_id, kept, topic)
+        md = render_brief_md(result, items_by_id, kept, topic, min_score_read=MIN_SCORE_READ)
         allowed_heading_url_index = _build_weekly_allowed_url_index(kept, items_by_id)
         link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
+        gardener_source_url_index = _build_allowed_url_index_from_link_rows(link_rows)
         try:
             md, link_stats = _resolve_weekly_heading_links(md, brief_filename, link_rows)
             print(
@@ -1505,15 +1629,14 @@ def run_weekly(
 
     if TOPIC_GARDENER_ENABLED and not dry_run and kept:
         topics_dir.mkdir(parents=True, exist_ok=True)
-        kept_items_for_sources = [
-            {"link": (r.get("link") or items_by_id.get(r.get("id"), {}).get("link") or "").strip()}
-            for r in kept
-        ]
         run_topic_gardener(
             topics_dir,
             brief_path,
             topic,
             logs_dir=paths.logs_dir,
             week_of=week_of,
-            allowed_source_url_index=_build_allowed_source_url_index(kept_items_for_sources),
+            allowed_source_url_index=gardener_source_url_index,
+            existing_topics=topic_data[1] if topic_data else None,
+            tracked_companies=interests.get("companies", []),
         )
+        clean_stray_action_json_in_logs(paths.logs_dir, f"topic_actions_{week_of}_{topic}.json")

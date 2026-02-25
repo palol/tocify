@@ -1,19 +1,13 @@
-import importlib.util
 import tempfile
 import types
-import sys
 import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from tests.runner_test_utils import write_runner_inputs
+from tests.runner_test_utils import load_weekly_module_for_tests, write_runner_inputs
 
 
-def _load_weekly_module():
-    tocify_mod = types.ModuleType("tocify")
-    runner_mod = types.ModuleType("tocify.runner")
-    vault_mod = types.ModuleType("tocify.runner.vault")
-
+def _load_weekly_module_with_frontmatter():
     def get_topic_paths(topic: str, vault_root: Path | None = None):
         root = Path(vault_root or ".")
         return types.SimpleNamespace(
@@ -21,73 +15,42 @@ def _load_weekly_module():
             interests_path=root / "config" / f"interests.{topic}.md",
             prompt_path=root / "config" / "triage_prompt.txt",
             briefs_dir=root / "content" / "briefs",
-            roundups_dir=root / "content" / "roundups",
-            annual_dir=root / "content" / "annual",
-            logs_dir=root / "logs",
+            logs_dir=root / "content" / "logs",
             briefs_articles_csv=root / "content" / "briefs_articles.csv",
+            edgar_ciks_path=root / "config" / f"edgar_ciks.{topic}.txt",
+            newsrooms_path=root / "config" / f"newsrooms.{topic}.txt",
         )
 
-    vault_mod.get_topic_paths = get_topic_paths
-    vault_mod.VAULT_ROOT = Path(".")
-    vault_mod.run_structured_prompt = lambda *_args, **_kwargs: {}
-
-    tocify_mod.parse_interests_md = lambda _text: {"keywords": []}
-    tocify_mod.load_feeds = lambda _path: []
-    tocify_mod.get_triage_runtime_metadata = lambda: {"triage_backend": "openai", "triage_model": "gpt-4o"}
-    tocify_mod.fetch_rss_items = lambda _feeds, end_date=None: [
-        {
-            "id": "item-1",
-            "title": "Paper A",
-            "link": "https://example.com/a",
-            "source": "Journal A",
-            "published_utc": "2026-02-16T00:00:00+00:00",
-            "summary": "Summary A",
-        }
-    ]
-    tocify_mod.keyword_prefilter = lambda items, _keywords, keep_top=200: items
-    tocify_mod.get_triage_backend_with_metadata = lambda: (
-        lambda *_args, **_kwargs: None,
-        {"triage_backend": "openai", "triage_model": "gpt-4o"},
+    module, frontmatter_mod = load_weekly_module_for_tests(
+        module_name="weekly_redundant_mentions_under_test",
+        get_topic_paths=get_topic_paths,
+        tocify_overrides={
+            "fetch_rss_items": lambda _feeds, end_date=None: [
+                {
+                    "id": "item-1",
+                    "title": "Paper A",
+                    "link": "https://example.com/a",
+                    "source": "Journal A",
+                    "published_utc": "2026-02-16T00:00:00+00:00",
+                    "summary": "Summary A",
+                }
+            ],
+            "triage_in_batches": lambda _interests, _items, _batch, _triage_fn: {
+                "notes": "Weekly notes.",
+                "ranked": [],
+            },
+        },
     )
-    tocify_mod.triage_in_batches = lambda _interests, _items, _batch, _triage_fn: {
-        "notes": "Weekly notes.",
-        "ranked": [],
-    }
+    return module, frontmatter_mod
 
-    dotenv_mod = types.ModuleType("dotenv")
-    dotenv_mod.load_dotenv = lambda *args, **kwargs: None
-    newspaper_mod = types.ModuleType("newspaper")
-    newspaper_mod.Article = object
 
-    frontmatter_path = Path(__file__).resolve().parents[1] / "tocify" / "frontmatter.py"
-    fm_spec = importlib.util.spec_from_file_location("tocify.frontmatter", frontmatter_path)
-    frontmatter_mod = importlib.util.module_from_spec(fm_spec)
-    assert fm_spec and fm_spec.loader
-    fm_spec.loader.exec_module(frontmatter_mod)
-    link_hygiene_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "link_hygiene.py"
-    lh_spec = importlib.util.spec_from_file_location("tocify.runner.link_hygiene", link_hygiene_path)
-    link_hygiene_mod = importlib.util.module_from_spec(lh_spec)
-    assert lh_spec and lh_spec.loader
-    lh_spec.loader.exec_module(link_hygiene_mod)
-
-    sys.modules["tocify"] = tocify_mod
-    sys.modules["tocify.runner"] = runner_mod
-    sys.modules["tocify.runner.vault"] = vault_mod
-    sys.modules["tocify.runner.link_hygiene"] = link_hygiene_mod
-    sys.modules["tocify.frontmatter"] = frontmatter_mod
-    sys.modules["dotenv"] = dotenv_mod
-    sys.modules["newspaper"] = newspaper_mod
-
-    weekly_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "weekly.py"
-    spec = importlib.util.spec_from_file_location("weekly_redundant_mentions_under_test", weekly_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    spec.loader.exec_module(module)
+def _load_weekly_module():
+    module, _ = _load_weekly_module_with_frontmatter()
     return module
 
 
-WEEKLY = _load_weekly_module()
-split_frontmatter_and_body = sys.modules["tocify.frontmatter"].split_frontmatter_and_body
+WEEKLY, _FRONTMATTER = _load_weekly_module_with_frontmatter()
+split_frontmatter_and_body = _FRONTMATTER.split_frontmatter_and_body
 
 
 class TopicRedundantMentionsTests(unittest.TestCase):

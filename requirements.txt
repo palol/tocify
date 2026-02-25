@@ -1,5 +1,6 @@
 # Kept in sync with pyproject.toml dependencies. Prefer: uv sync
 feedparser>=6.0.0
+requests>=2.28.0
 python-dateutil>=2.9.0
 python-dotenv>=1.0.0
 openai>=1.0.0

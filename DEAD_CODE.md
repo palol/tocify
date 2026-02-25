@@ -2,6 +2,8 @@
 
 This document lists code identified as unused (dead) and safe to remove. Imports marked below have been removed in code; the rest are documented for optional cleanup.
 
+When you remove dead code in the future, update the **Already removed** and **Verified as used** sections so this file stays accurate.
+
 ---
 
 ## Marked for removal
@@ -48,9 +50,17 @@ The following were previously listed as "marked for removal"; the code no longer
 
 ---
 
+## Tooling
+
+- **Ruff**: `F401`, `F841`, `E401`, `B`, `UP` — run `ruff check tocify tests` (or `uv run ruff check tocify tests`). Catches unused imports/variables and bugbear/pyupgrade issues.
+- **Vulture** (optional): dead-code scanner — run `vulture tocify tests --min-confidence 80` (or `uv run vulture tocify tests --min-confidence 80`). Add any false positives to a `pyproject.toml` or `.vulture.conf` ignore list if needed.
+
+---
+
 ## Verified as used (not dead)
 
-- **`tocify/digest.py`**: `section`, `sha1`, `parse_date` — used only inside this module (e.g. by `parse_interests_md`, `fetch_rss_items`).
+- **`tocify/utils.py`**: `sha1`, `normalize_summary` — shared by digest, news, and historical (centralized to remove duplication).
+- **`tocify/digest.py`**: `section`, `parse_date` — used only inside this module (e.g. by `parse_interests_md`, `fetch_rss_items`). `sha1` now from `tocify.utils`.
 - **`tocify/frontmatter.py`**: `parse_frontmatter`, `render_frontmatter` — used by `split_frontmatter_and_body` and `with_frontmatter`.
 - **`tocify/integrations/_shared.py`**: `load_prompt_template` — used by `build_triage_prompt`.
 - **`tocify/runner/link_hygiene.py`**: `_dedupe_urls` — used in this module and imported by `weekly.py`.

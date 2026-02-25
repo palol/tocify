@@ -18,14 +18,19 @@ Prioritize and heavily weight:
 
 Output rules:
 - Return JSON strictly matching the schema.
+- Rank only the RSS items provided in {{ITEMS}}.
+- Preserve each item's identity fields from input: id, link, and source.
 - score in [0,1]
-- "why": 1–2 concrete sentences grounded in title/summary
-- "tags": short (EEG, aperiodic, timescales, ECG, methods, etc)
+- "why": one paragraph, max 320 characters, concrete and grounded in title/summary
+- "tags": 1-8 short tags, max 40 chars each
 - Rank highest score first
 - Do NOT hallucinate details
 
 USER KEYWORDS:
 {{KEYWORDS}}
+
+TRACKED COMPANIES (weight mentions in title/summary):
+{{COMPANIES}}
 
 USER INTERESTS:
 {{NARRATIVE}}

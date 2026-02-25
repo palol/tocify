@@ -1,22 +1,10 @@
-import importlib.util
-import sys
 import tempfile
-import types
 import unittest
 from pathlib import Path
 
+from tests.runner_test_utils import load_weekly_module_for_tests
 
 def _load_weekly_module():
-    tocify_mod = types.ModuleType("tocify")
-    runner_mod = types.ModuleType("tocify.runner")
-    vault_mod = types.ModuleType("tocify.runner.vault")
-    vault_mod.get_topic_paths = lambda *args, **kwargs: None
-    vault_mod.VAULT_ROOT = Path(".")
-    vault_mod.run_structured_prompt = lambda *_args, **_kwargs: {}
-    dotenv_mod = types.ModuleType("dotenv")
-    dotenv_mod.load_dotenv = lambda *args, **kwargs: None
-    newspaper_mod = types.ModuleType("newspaper")
-
     class DummyArticle:
         def __init__(self, url: str):
             self.url = url
@@ -28,38 +16,16 @@ def _load_weekly_module():
         def parse(self) -> None:
             return None
 
-    newspaper_mod.Article = DummyArticle
-
-    frontmatter_path = Path(__file__).resolve().parents[1] / "tocify" / "frontmatter.py"
-    fm_spec = importlib.util.spec_from_file_location("tocify.frontmatter", frontmatter_path)
-    frontmatter_mod = importlib.util.module_from_spec(fm_spec)
-    assert fm_spec and fm_spec.loader
-    fm_spec.loader.exec_module(frontmatter_mod)
-    link_hygiene_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "link_hygiene.py"
-    lh_spec = importlib.util.spec_from_file_location("tocify.runner.link_hygiene", link_hygiene_path)
-    link_hygiene_mod = importlib.util.module_from_spec(lh_spec)
-    assert lh_spec and lh_spec.loader
-    lh_spec.loader.exec_module(link_hygiene_mod)
-
-    sys.modules.setdefault("tocify", tocify_mod)
-    sys.modules.setdefault("tocify.runner", runner_mod)
-    sys.modules["tocify.runner.vault"] = vault_mod
-    sys.modules["tocify.runner.link_hygiene"] = link_hygiene_mod
-    sys.modules["tocify.frontmatter"] = frontmatter_mod
-    sys.modules.setdefault("dotenv", dotenv_mod)
-    sys.modules.setdefault("newspaper", newspaper_mod)
-
-    weekly_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "weekly.py"
-    spec = importlib.util.spec_from_file_location("weekly_under_test", weekly_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    spec.loader.exec_module(module)
-    return module
+    module, frontmatter_mod = load_weekly_module_for_tests(
+        module_name="weekly_under_test",
+        newspaper_article_class=DummyArticle,
+    )
+    return module, frontmatter_mod
 
 
-WEEKLY = _load_weekly_module()
+WEEKLY, _FRONTMATTER = _load_weekly_module()
 _apply_topic_action = WEEKLY._apply_topic_action
-_split_frontmatter_and_body = sys.modules["tocify.frontmatter"].split_frontmatter_and_body
+_split_frontmatter_and_body = _FRONTMATTER.split_frontmatter_and_body
 
 
 def _read(path: Path) -> str:

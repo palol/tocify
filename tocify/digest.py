@@ -1,28 +1,34 @@
-import hashlib
 import math
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time as dt_time, timezone, timedelta
+from io import BytesIO
 
 import feedparser
+import requests
 from tqdm import tqdm
 from dateutil import parser as dtparser
 from dotenv import load_dotenv
+from tocify.config import env_int, load_pipeline_config
 from tocify.frontmatter import aggregate_ranked_item_tags, with_frontmatter
+from tocify.utils import sha1
 
 load_dotenv()
 
 # ---- config (env-tweakable) ----
-MAX_ITEMS_PER_FEED = int(os.getenv("MAX_ITEMS_PER_FEED", "50"))
-MAX_TOTAL_ITEMS = int(os.getenv("MAX_TOTAL_ITEMS", "400"))
-LOOKBACK_DAYS = int(os.getenv("LOOKBACK_DAYS", "7"))
-INTERESTS_MAX_CHARS = int(os.getenv("INTERESTS_MAX_CHARS", "3000"))
-SUMMARY_MAX_CHARS = int(os.getenv("SUMMARY_MAX_CHARS", "500"))
-PREFILTER_KEEP_TOP = int(os.getenv("PREFILTER_KEEP_TOP", "200"))
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "50"))
-MIN_SCORE_READ = float(os.getenv("MIN_SCORE_READ", "0.65"))
-MAX_RETURNED = int(os.getenv("MAX_RETURNED", "40"))
+PIPELINE_CONFIG = load_pipeline_config()
+MAX_ITEMS_PER_FEED = PIPELINE_CONFIG.max_items_per_feed
+MAX_TOTAL_ITEMS = PIPELINE_CONFIG.max_total_items
+LOOKBACK_DAYS = PIPELINE_CONFIG.lookback_days
+SUMMARY_MAX_CHARS = PIPELINE_CONFIG.summary_max_chars
+PREFILTER_KEEP_TOP = PIPELINE_CONFIG.prefilter_keep_top
+BATCH_SIZE = PIPELINE_CONFIG.batch_size
+MIN_SCORE_READ = PIPELINE_CONFIG.min_score_read
+MAX_RETURNED = PIPELINE_CONFIG.max_returned
+INTERESTS_MAX_CHARS = env_int("INTERESTS_MAX_CHARS", 3000)
+RSS_FETCH_TIMEOUT = env_int("RSS_FETCH_TIMEOUT", 25)
 
 
 # ---- tiny helpers ----
@@ -38,7 +44,7 @@ def load_feeds(path: str) -> list[dict]:
     """
     feeds = []
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             s = line.strip()
             if not s or s.startswith("#"):
@@ -59,26 +65,41 @@ def load_feeds(path: str) -> list[dict]:
 
 def read_text(path: str) -> str:
     """Read and return the entire contents of a text file."""
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return f.read()
-
-
-def sha1(s: str) -> str:
-    """Return SHA-1 hex digest of the string."""
-    return hashlib.sha1(s.encode("utf-8")).hexdigest()
 
 
 def section(md: str, heading: str) -> str:
     """Extract the first markdown section body under the given heading (e.g. ## Keywords)."""
-    m = re.search(rf"(?im)^\s*#{1,6}\s+{re.escape(heading)}\s*$", md)
-    if not m:
+    target = (heading or "").strip().casefold()
+    if not target:
         return ""
-    rest = md[m.end():]
-    m2 = re.search(r"(?im)^\s*#{1,6}\s+\S", rest)
-    return (rest[:m2.start()] if m2 else rest).strip()
+
+    lines = (md or "").splitlines()
+    body_start = None
+
+    for idx, raw_line in enumerate(lines):
+        m = re.match(r"^\s{0,3}(#{1,6})[ \t]+(.+?)\s*$", raw_line)
+        if not m:
+            continue
+        title = re.sub(r"\s+#+\s*$", "", m.group(2)).strip().casefold()
+        if title == target:
+            body_start = idx + 1
+            break
+
+    if body_start is None:
+        return ""
+
+    body_lines: list[str] = []
+    for raw_line in lines[body_start:]:
+        if re.match(r"^\s{0,3}#{1,6}\s+\S", raw_line):
+            break
+        body_lines.append(raw_line)
+    return "\n".join(body_lines).strip()
 
 def parse_interests_md(md: str) -> dict:
-    """Parse interests markdown with Keywords and Narrative sections; return dict with keys keywords (list) and narrative (str, truncated to INTERESTS_MAX_CHARS)."""
+    """Parse interests markdown with Keywords, Narrative, and optional Companies sections.
+    Returns dict with keys: keywords (list), narrative (str, truncated), companies (list, optional)."""
     keywords = []
     for line in section(md, "Keywords").splitlines():
         line = re.sub(r"^[\-\*\+]\s+", "", line.strip())
@@ -87,7 +108,55 @@ def parse_interests_md(md: str) -> dict:
     narrative = section(md, "Narrative").strip()
     if len(narrative) > INTERESTS_MAX_CHARS:
         narrative = narrative[:INTERESTS_MAX_CHARS] + "…"
-    return {"keywords": keywords[:200], "narrative": narrative}
+    companies = []
+    for line in section(md, "Companies").splitlines():
+        line = re.sub(r"^[\-\*\+]\s+", "", line.strip())
+        if line:
+            companies.append(line)
+    return {
+        "keywords": keywords[:200],
+        "narrative": narrative,
+        "companies": companies[:200],
+    }
+
+
+def topic_search_string(
+    interests: dict,
+    max_keywords: int | None = None,
+    *,
+    narrative_fallback_words: int = 15,
+) -> str:
+    """Build a single search string from interests keywords for OpenAlex/NewsAPI queries.
+    Uses all keywords (or first max_keywords if set) joined by spaces.
+    When there are no keywords and narrative_fallback_words > 0, uses the first N words of the narrative as fallback."""
+    keywords = interests.get("keywords") or []
+    if max_keywords is not None:
+        keywords = keywords[:max_keywords]
+    taken = [k.strip() for k in keywords if k and str(k).strip()]
+    if taken:
+        return " ".join(taken)
+    if narrative_fallback_words <= 0:
+        return ""
+    narrative = (interests.get("narrative") or "").strip()
+    if not narrative:
+        return ""
+    words = re.findall(r"\b\w+\b", narrative)
+    first = words[:narrative_fallback_words]
+    return " ".join(first) if first else ""
+
+
+def topic_search_queries(
+    interests: dict,
+    max_queries: int | None = None,
+) -> list[str]:
+    """Build a list of search queries from interests keywords (one per keyword).
+    Returns all non-empty, stripped keywords; if max_queries is set (e.g. 100), cap at that for safety.
+    Used by Google News to run one RSS search per keyword so no topic is left out."""
+    keywords = interests.get("keywords") or []
+    taken = [k.strip() for k in keywords if k and str(k).strip()]
+    if max_queries is not None and max_queries > 0:
+        taken = taken[:max_queries]
+    return taken
 
 
 # ---- rss ----
@@ -107,6 +176,51 @@ def parse_date(entry) -> datetime | None:
                 pass
     return None
 
+
+def _fetch_one_feed(
+    feed: dict,
+    cutoff: datetime,
+    end_dt: datetime,
+    timeout: int,
+) -> list[dict]:
+    """Fetch one feed URL and return list of item dicts; on error return [] and log."""
+    url = feed["url"]
+    try:
+        resp = requests.get(url, timeout=timeout)
+        resp.raise_for_status()
+        d = feedparser.parse(BytesIO(resp.content))
+    except Exception as e:
+        tqdm.write(f"[WARN] RSS fetch failed {url!r}: {e}")
+        return []
+    source = (
+        feed.get("name")
+        or (d.feed.get("title") if d.feed else None)
+        or url
+    )
+    source = (source or "").strip()
+    items: list[dict] = []
+    for e in d.entries[:MAX_ITEMS_PER_FEED]:
+        title = (e.get("title") or "").strip()
+        link = (e.get("link") or "").strip()
+        if not (title and link):
+            continue
+        dt = parse_date(e)
+        if dt and (dt < cutoff or dt > end_dt):
+            continue
+        summary = re.sub(r"\s+", " ", (e.get("summary") or e.get("description") or "").strip())
+        if len(summary) > SUMMARY_MAX_CHARS:
+            summary = summary[:SUMMARY_MAX_CHARS] + "…"
+        items.append({
+            "id": sha1(f"{source}|{title}|{link}"),
+            "source": source,
+            "title": title,
+            "link": link,
+            "published_utc": dt.isoformat() if dt else None,
+            "summary": summary,
+        })
+    return items
+
+
 def fetch_rss_items(feeds: list[dict], end_date: date | None = None) -> list[dict]:
     """Fetch RSS items. If end_date is None, use now; else window ends at end_date 23:59:59 UTC."""
     if end_date is None:
@@ -115,49 +229,60 @@ def fetch_rss_items(feeds: list[dict], end_date: date | None = None) -> list[dic
     else:
         end_dt = datetime.combine(end_date, dt_time(23, 59, 59), tzinfo=timezone.utc)
         cutoff = end_dt - timedelta(days=LOOKBACK_DAYS)
-    items = []
-    for feed in feeds:
-        url = feed["url"]
-        d = feedparser.parse(url)
-
-        # Priority: manual name > RSS title > URL
-        source = (
-            feed.get("name")
-            or d.feed.get("title")
-            or url
-        ).strip()
-        for e in d.entries[:MAX_ITEMS_PER_FEED]:
-            title = (e.get("title") or "").strip()
-            link = (e.get("link") or "").strip()
-            if not (title and link):
-                continue
-            dt = parse_date(e)
-            if dt and (dt < cutoff or dt > end_dt):
-                continue
-            summary = re.sub(r"\s+", " ", (e.get("summary") or e.get("description") or "").strip())
-            if len(summary) > SUMMARY_MAX_CHARS:
-                summary = summary[:SUMMARY_MAX_CHARS] + "…"
-            items.append({
-                "id": sha1(f"{source}|{title}|{link}"),
-                "source": source,
-                "title": title,
-                "link": link,
-                "published_utc": dt.isoformat() if dt else None,
-                "summary": summary,
-            })
+    if not feeds:
+        return []
+    timeout = RSS_FETCH_TIMEOUT
+    max_workers = min(env_int("RSS_FETCH_MAX_WORKERS", 10), len(feeds))
+    max_workers = max(1, max_workers)
+    items: list[dict] = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(_fetch_one_feed, feed, cutoff, end_dt, timeout)
+            for feed in feeds
+        ]
+        for fut in futures:
+            try:
+                items.extend(fut.result())
+            except Exception as e:
+                tqdm.write(f"[WARN] RSS fetch task failed: {e}")
     # dedupe + newest first
     items = list({it["id"]: it for it in items}.values())
     items.sort(key=lambda x: x["published_utc"] or "", reverse=True)
     return items[:MAX_TOTAL_ITEMS]
 
 
+def merge_feed_items(*item_lists: list[dict], max_items: int | None = None) -> list[dict]:
+    """Merge multiple lists of feed items (same schema: id, source, title, link, published_utc, summary). Dedupe by id, sort newest first."""
+    seen: dict[str, dict] = {}
+    for lst in item_lists:
+        for it in lst:
+            iid = it.get("id")
+            if iid and iid not in seen:
+                seen[iid] = it
+    out = sorted(seen.values(), key=lambda x: x.get("published_utc") or "", reverse=True)
+    if max_items is not None:
+        out = out[:max_items]
+    return out
+
+
 # ---- local prefilter ----
-def keyword_prefilter(items: list[dict], keywords: list[str], keep_top: int) -> list[dict]:
-    """Score items by keyword hits and return top keep_top (or unfiltered slice if few matches)."""
+def keyword_prefilter(
+    items: list[dict],
+    keywords: list[str],
+    keep_top: int,
+    *,
+    companies: list[str] | None = None,
+) -> list[dict]:
+    """Score items by keyword and company hits; return top keep_top (or unfiltered slice if few matches).
+    If companies is provided, matches on company names count toward the score like keyword matches."""
     kws = [k.lower() for k in keywords if k.strip()]
+    comps = [c.lower() for c in (companies or []) if c.strip()]
+    all_terms = kws + comps
+
     def hits(it):
-        text = (it.get("title","") + " " + it.get("summary","")).lower()
-        return sum(1 for k in kws if k in text)
+        text = (it.get("title", "") + " " + it.get("summary", "")).lower()
+        return sum(1 for t in all_terms if t in text)
+
     scored = [(hits(it), it) for it in items]
     matched = [it for s, it in scored if s > 0]
     if len(matched) < min(50, keep_top):
@@ -267,6 +392,33 @@ def main():
     feeds = load_feeds("feeds.txt")
     items = fetch_rss_items(feeds)
     print(f"Fetched {len(items)} RSS items (pre-filter)")
+
+    # Optional news backend for present flow (same date window as RSS)
+    now = datetime.now(timezone.utc)
+    start_dt = now - timedelta(days=LOOKBACK_DAYS)
+    end_dt = now
+    news_backend = (os.getenv("NEWS_BACKEND") or "").strip().lower()
+    add_google_news = (os.getenv("ADD_GOOGLE_NEWS") or "").strip().lower() in ("1", "true", "yes")
+    if news_backend == "newsapi":
+        try:
+            from tocify.news import fetch_news_items as fetch_news
+            news_items = fetch_news(start_dt.date(), end_dt.date())
+            if news_items:
+                items = merge_feed_items(items, news_items, max_items=MAX_TOTAL_ITEMS)
+                print(f"Added {len(news_items)} news items (merged total {len(items)})")
+        except Exception as e:
+            tqdm.write(f"[WARN] News backend failed: {e}")
+    if add_google_news or news_backend == "googlenews":
+        try:
+            from tocify.googlenews import fetch_google_news_items
+            queries = topic_search_queries(interests)
+            if queries:
+                gnews_items = fetch_google_news_items(start_dt.date(), end_dt.date(), queries)
+                if gnews_items:
+                    items = merge_feed_items(items, gnews_items, max_items=MAX_TOTAL_ITEMS)
+                    print(f"Added {len(gnews_items)} Google News items (merged total {len(items)})")
+        except Exception as e:
+            tqdm.write(f"[WARN] Google News fetch failed: {e}")
     triage_metadata = {"triage_backend": "unknown", "triage_model": "unknown"}
     try:
         from tocify.integrations import get_triage_runtime_metadata
@@ -299,7 +451,12 @@ def main():
         print("No items; wrote digest.md")
         return
 
-    items = keyword_prefilter(items, interests["keywords"], keep_top=PREFILTER_KEEP_TOP)
+    items = keyword_prefilter(
+        items,
+        interests["keywords"],
+        keep_top=PREFILTER_KEEP_TOP,
+        companies=interests.get("companies", []),
+    )
     print(f"Sending {len(items)} RSS items to model (post-filter)")
 
     items_by_id = {it["id"]: it for it in items}

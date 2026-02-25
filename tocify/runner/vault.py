@@ -28,6 +28,8 @@ class TopicPaths:
     logs_dir: Path
     briefs_articles_csv: Path
     prompt_path: Path
+    edgar_ciks_path: Path
+    newsrooms_path: Path
 
 
 @dataclass
@@ -61,6 +63,8 @@ def get_topic_paths(topic: str, vault_root: Path | None = None) -> TopicPaths:
         logs_dir=root / "logs",
         briefs_articles_csv=content / "briefs_articles.csv",
         prompt_path=config / "triage_prompt.txt",
+        edgar_ciks_path=config / f"edgar_ciks.{topic}.txt",
+        newsrooms_path=config / f"newsrooms.{topic}.txt",
     )
 
 
@@ -400,17 +404,18 @@ def _run_cursor_prompt(
         cmd.append("--trust")
     if model and model != "unknown":
         cmd.extend(["--model", model])
-    cmd.append(prompt)
 
     try:
-        completed = subprocess.run(cmd, capture_output=True, text=True, env=os.environ)
+        completed = subprocess.run(
+            cmd, capture_output=True, text=True, input=prompt, env=os.environ
+        )
     except FileNotFoundError as e:
         raise RuntimeError(
             "Cursor backend selected but `agent` command was not found on PATH. "
             "Install Cursor CLI agent support or set TOCIFY_BACKEND=openai|gemini."
         ) from e
 
-    result.command = cmd
+    result.command = cmd + ["<stdin>"]
     result.returncode = int(getattr(completed, "returncode", 0) or 0)
     result.output_text = (completed.stdout or "").strip()
     result.stderr = (completed.stderr or "").strip()
@@ -582,16 +587,21 @@ def run_agent_and_save_output(
                 final_output = output_path.read_text(encoding="utf-8")
             except OSError:
                 final_output = ""
+            if final_output and not final_output.endswith("\n"):
+                final_output += "\n"
+                output_path.write_text(final_output, encoding="utf-8")
         else:
-            final_output = fallback_content
+            final_output = fallback_content if fallback_content.endswith("\n") else fallback_content + "\n"
             output_path.write_text(final_output, encoding="utf-8")
     else:
-        final_output = response_text
+        final_output = response_text if response_text.endswith("\n") else response_text + "\n"
         output_path.write_text(final_output, encoding="utf-8")
 
-    from tocify.markdown_lint import lint_file
-
-    lint_file(output_path)
+    try:
+        from tocify.markdown_lint import lint_file
+        lint_file(output_path)
+    except ModuleNotFoundError:
+        pass  # skip lint when vault is loaded in isolation (e.g. tests)
 
     log_path.write_text(
         _build_prompt_log(result, final_output, used_fallback, preserved_agent_file),

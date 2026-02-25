@@ -7,6 +7,13 @@ single source of truth. Cursor has no schema API and uses prompt-only + parse.
 import json
 import os
 
+REQUIRED_PROMPT_PLACEHOLDERS = (
+    "{{ITEMS}}",
+    "{{KEYWORDS}}",
+    "{{NARRATIVE}}",
+    "{{COMPANIES}}",
+)
+
 SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -19,14 +26,19 @@ SCHEMA = {
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
-                    "id": {"type": "string"},
-                    "title": {"type": "string"},
-                    "link": {"type": "string"},
-                    "source": {"type": "string"},
+                    "id": {"type": "string", "maxLength": 128},
+                    "title": {"type": "string", "maxLength": 400},
+                    "link": {"type": "string", "maxLength": 2048},
+                    "source": {"type": "string", "maxLength": 200},
                     "published_utc": {"type": ["string", "null"]},
-                    "score": {"type": "number"},
-                    "why": {"type": "string"},
-                    "tags": {"type": "array", "items": {"type": "string"}},
+                    "score": {"type": "number", "minimum": 0, "maximum": 1},
+                    "why": {"type": "string", "maxLength": 320},
+                    "tags": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "items": {"type": "string", "maxLength": 40},
+                    },
                 },
                 "required": ["id", "title", "link", "source", "published_utc", "score", "why", "tags"],
             },
@@ -42,8 +54,13 @@ def load_prompt_template(path: str | None = None) -> str:
         path = os.getenv("TOCIFY_PROMPT_PATH", "prompt.txt")
     if not os.path.exists(path):
         raise RuntimeError(f"Prompt file not found: {path}")
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
+    with open(path, encoding="utf-8") as f:
+        template = f.read()
+    missing = [token for token in REQUIRED_PROMPT_PLACEHOLDERS if token not in template]
+    if missing:
+        missing_str = ", ".join(missing)
+        raise RuntimeError(f"Prompt template missing required placeholders ({missing_str}): {path}")
+    return template
 
 
 def build_triage_prompt(
@@ -62,9 +79,11 @@ def build_triage_prompt(
         for it in items
     ]
     template = load_prompt_template(prompt_path)
+    companies = interests.get("companies", [])
     prompt = (
         template.replace("{{KEYWORDS}}", json.dumps(interests["keywords"], ensure_ascii=False))
         .replace("{{NARRATIVE}}", interests["narrative"])
+        .replace("{{COMPANIES}}", json.dumps(companies, ensure_ascii=False))
         .replace("{{ITEMS}}", json.dumps(lean_items, ensure_ascii=False))
     )
     return (prompt, lean_items)

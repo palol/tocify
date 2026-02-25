@@ -44,3 +44,4 @@ Out: massive, complicated changes. multi-modal/client support.
 ## 2025-02-17
 
 - **Turn**: User asked to remove TOCIFY variables so the project is Cursor CLI only. Removed _cursor_cli() and TOCIFY_CURSOR_CLI; _cursor_api_key() now uses only CURSOR_API_KEY; error message updated; command is always `agent -p --output-format text --trust`.
+- **Turn**: Cursor backend now passes the prompt via stdin (not argv) so agent (cursor-cli) does not hit "Argument list too long" on Linux when batches or runner prompts are large.

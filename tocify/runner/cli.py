@@ -1,4 +1,4 @@
-"""CLI entrypoint: weekly, monthly, annual-review, list-topics, clear-topic, process-whole-year, calculate-weeks, init-quartz."""
+"""CLI entrypoint: weekly, monthly, annual-review, list-topics, clear-topic, clean-action-json, process-whole-year, calculate-weeks, init-quartz. Backfill past years at weekly granularity via process-whole-year."""
 
 import argparse
 import datetime as dt
@@ -12,7 +12,7 @@ from tocify.runner.weekly import run_weekly
 from tocify.runner.monthly import main as monthly_main
 from tocify.runner.annual import main as annual_main
 from tocify.runner.weeks import get_month_metadata, calculate_week_ends
-from tocify.runner.clear import main as clear_main
+from tocify.runner.clear import clean_action_json, find_stray_action_json, main as clear_main
 from tocify.runner.quartz_init import (
     DEFAULT_QUARTZ_REF,
     DEFAULT_QUARTZ_REPO,
@@ -69,6 +69,23 @@ def cmd_clear_topic(args: argparse.Namespace) -> None:
         vault_root=getattr(args, "vault", None),
         confirm=getattr(args, "yes", False),
     )
+
+
+def cmd_clean_action_json(args: argparse.Namespace) -> None:
+    """Remove stray Cursor-produced action JSON; preserve content/logs/topic_actions_*.json."""
+    vault = getattr(args, "vault", None)
+    dry_run = getattr(args, "dry_run", False)
+    stray = find_stray_action_json(vault_root=vault)
+    if not stray:
+        print("No stray action JSON files found.")
+        return
+    if dry_run:
+        print(f"[DRY-RUN] Would remove {len(stray)} file(s):")
+        for p in stray:
+            print(f"  {p}")
+        return
+    removed = clean_action_json(vault_root=vault, dry_run=False, stray=stray)
+    print(f"Removed {removed} stray action JSON file(s).")
 
 
 def cmd_process_whole_year(args: argparse.Namespace) -> None:
@@ -224,6 +241,14 @@ def main() -> None:
     p_clear.add_argument("topic", type=str)
     p_clear.add_argument("--yes", action="store_true", help="Skip confirmation")
     p_clear.set_defaults(run=cmd_clear_topic)
+
+    # clean-action-json
+    p_clean_aj = subparsers.add_parser(
+        "clean-action-json",
+        help="Remove stray Cursor-produced action JSON (preserves content/logs/topic_actions_*.json)",
+    )
+    p_clean_aj.add_argument("--dry-run", action="store_true", help="List files that would be removed")
+    p_clean_aj.set_defaults(run=cmd_clean_action_json)
 
     # process-whole-year
     p_year = subparsers.add_parser("process-whole-year", help="Run weekly + monthly + annual for a year")
