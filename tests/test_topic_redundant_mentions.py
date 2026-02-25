@@ -21,6 +21,9 @@ def _load_weekly_module():
             interests_path=root / "config" / f"interests.{topic}.md",
             prompt_path=root / "config" / "triage_prompt.txt",
             briefs_dir=root / "content" / "briefs",
+            roundups_dir=root / "content" / "roundups",
+            annual_dir=root / "content" / "annual",
+            logs_dir=root / "logs",
             briefs_articles_csv=root / "content" / "briefs_articles.csv",
         )
 

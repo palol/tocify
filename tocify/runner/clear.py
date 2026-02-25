@@ -1,4 +1,4 @@
-"""Remove all data for a topic: briefs/logs matching *_<topic>_*, and that topic's rows from briefs_articles.csv."""
+"""Remove all data for a topic: weekly briefs, monthly roundups, annual reviews, and topic logs; and that topic's rows from briefs_articles.csv."""
 
 import csv
 import sys
@@ -13,7 +13,7 @@ def main(topic: str, vault_root: Path | None = None, confirm: bool = False) -> N
 
     if not confirm:
         print("⚠️  WARNING: This will delete all data for topic '{}'!".format(topic), file=sys.stderr)
-        print("   - Briefs and logs matching *_{}_*".format(topic), file=sys.stderr)
+        print("   - Weekly briefs (content/briefs/* week *.md), monthly roundups (content/roundups/), annual (content/annual/), logs matching *_{}_*".format(topic), file=sys.stderr)
         print("   - Rows for {} in content/briefs_articles.csv".format(topic), file=sys.stderr)
         print("", file=sys.stderr)
         print('Type "yes" to confirm: ', end="", file=sys.stderr)
@@ -26,13 +26,27 @@ def main(topic: str, vault_root: Path | None = None, confirm: bool = False) -> N
             sys.exit(1)
 
     removed = 0
-    for d in (paths.briefs_dir, paths.logs_dir):
-        if d.exists():
-            for p in d.glob(f"*_{topic}_*"):
-                if p.is_file():
-                    p.unlink()
-                    removed += 1
-    print(f"Removed {removed} brief/log files for topic {topic}")
+    if paths.briefs_dir.exists():
+        for p in paths.briefs_dir.glob("* week *.md"):
+            if p.is_file():
+                p.unlink()
+                removed += 1
+    if paths.roundups_dir.exists():
+        for p in paths.roundups_dir.glob("*.md"):
+            if p.is_file():
+                p.unlink()
+                removed += 1
+    if paths.annual_dir.exists():
+        for p in paths.annual_dir.glob("* review.md"):
+            if p.is_file():
+                p.unlink()
+                removed += 1
+    if paths.logs_dir.exists():
+        for p in paths.logs_dir.glob(f"*_{topic}_*"):
+            if p.is_file():
+                p.unlink()
+                removed += 1
+    print(f"Removed {removed} files for topic {topic} (weekly briefs, roundups, annual, logs)")
 
     csv_path = paths.briefs_articles_csv
     if csv_path.exists():

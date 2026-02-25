@@ -20,7 +20,9 @@ def _load_weekly_module():
             interests_path=root / "config" / f"interests.{topic}.md",
             prompt_path=root / "config" / "triage_prompt.txt",
             briefs_dir=root / "content" / "briefs",
-            logs_dir=root / "content" / "logs",
+            roundups_dir=root / "content" / "roundups",
+            annual_dir=root / "content" / "annual",
+            logs_dir=root / "logs",
             briefs_articles_csv=root / "content" / "briefs_articles.csv",
         )
 
@@ -104,7 +106,7 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
             root = Path(td)
             write_runner_inputs(root)
             weekly.run_weekly(topic="bci", week_spec="2026 week 8", dry_run=0, vault_root=root)
-            brief_path = root / "content" / "briefs" / "2026-02-16_bci_weekly-brief.md"
+            brief_path = root / "content" / "briefs" / "2026 week 08.md"
             content = brief_path.read_text(encoding="utf-8")
 
         self.assertIn("## [Paper A](https://canonical.example.com/a)", content)
@@ -123,7 +125,7 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
                 root = Path(td)
                 write_runner_inputs(root)
                 weekly.run_weekly(topic="bci", week_spec="2026 week 8", dry_run=0, vault_root=root)
-                brief_path = root / "content" / "briefs" / "2026-02-16_bci_weekly-brief.md"
+                brief_path = root / "content" / "briefs" / "2026 week 08.md"
                 content = brief_path.read_text(encoding="utf-8")
         finally:
             weekly._resolve_weekly_heading_links = original_resolver

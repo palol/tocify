@@ -94,11 +94,11 @@ def main(
     brief_paths = load_briefs_for_date_range(start_date, end_date, topic, vault_root=root)
     allowed_source_url_index = build_allowed_url_index_from_sources(brief_paths)
 
-    paths.briefs_dir.mkdir(parents=True, exist_ok=True)
+    paths.roundups_dir.mkdir(parents=True, exist_ok=True)
     paths.logs_dir.mkdir(parents=True, exist_ok=True)
     month_name = end_date.strftime("%B %Y")
     month_iso = end_date.strftime("%Y-%m")
-    roundup_filename = paths.briefs_dir / f"{end_date.isoformat()}_{topic}_monthly-roundup.md"
+    roundup_filename = paths.roundups_dir / f"{month_iso}.md"
     log_filename = paths.logs_dir / f"{end_date.isoformat()}_{topic}_monthly-roundup.log.md"
     fallback_content = f"# {topic.upper()} Monthly Roundup — {month_name}\n\n*No briefs found for this period.*\n"
 

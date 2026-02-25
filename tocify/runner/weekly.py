@@ -1304,7 +1304,11 @@ def run_weekly(
     print(f"Fetched {len(items)} RSS items (pre-filter) [topic={topic}]")
 
     paths.briefs_dir.mkdir(parents=True, exist_ok=True)
-    brief_filename = f"{week_of}_{topic}_weekly-brief.md"
+    paths.logs_dir.mkdir(parents=True, exist_ok=True)
+    # Layout: briefs as "YYYY week N.md" (ISO week from week_of Monday)
+    week_date = datetime.strptime(week_of, "%Y-%m-%d").date()
+    year_iso, week_iso, _ = week_date.isocalendar()
+    brief_filename = f"{year_iso} week {week_iso:02d}.md"
     brief_path = paths.briefs_dir / brief_filename
 
     if not items:

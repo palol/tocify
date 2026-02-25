@@ -18,11 +18,13 @@ VAULT_ROOT = Path(os.environ.get("BCI_VAULT_ROOT", ".")).resolve()
 
 @dataclass(frozen=True)
 class TopicPaths:
-    """Paths for a single topic (unified briefs/logs/csv dirs; per-topic feeds/interests)."""
+    """Paths for a single topic (unified briefs/roundups/annual/logs/csv dirs; per-topic feeds/interests)."""
 
     feeds_path: Path
     interests_path: Path
     briefs_dir: Path
+    roundups_dir: Path
+    annual_dir: Path
     logs_dir: Path
     briefs_articles_csv: Path
     prompt_path: Path
@@ -46,7 +48,7 @@ class PromptRunResult:
 
 
 def get_topic_paths(topic: str, vault_root: Path | None = None) -> TopicPaths:
-    """Return paths for the given topic. Same briefs_dir, logs_dir, csv for all topics."""
+    """Return paths for the given topic. Same briefs_dir, roundups_dir, annual_dir, logs_dir, csv for all topics."""
     root = vault_root or VAULT_ROOT
     config = root / "config"
     content = root / "content"
@@ -54,7 +56,9 @@ def get_topic_paths(topic: str, vault_root: Path | None = None) -> TopicPaths:
         feeds_path=config / f"feeds.{topic}.txt",
         interests_path=config / f"interests.{topic}.md",
         briefs_dir=content / "briefs",
-        logs_dir=content / "logs",
+        roundups_dir=content / "roundups",
+        annual_dir=content / "annual",
+        logs_dir=root / "logs",
         briefs_articles_csv=content / "briefs_articles.csv",
         prompt_path=config / "triage_prompt.txt",
     )
@@ -76,59 +80,58 @@ def list_topics(vault_root: Path | None = None) -> list[str]:
     return sorted(topics)
 
 
+_WEEK_BRIEF_STEM_RE = re.compile(r"^(\d{4})\s+week\s+(\d+)$")
+
+
 def load_briefs_for_date_range(
     start_date: dt.date, end_date: dt.date, topic: str, vault_root: Path | None = None
 ) -> list[Path]:
-    """Load weekly briefs for the topic that fall within the date range."""
+    """Load weekly briefs in briefs_dir that fall within the date range. Parses stem as YYYY week N."""
     paths = get_topic_paths(topic, vault_root)
     briefs_dir = paths.briefs_dir
-    briefs = []
+    briefs: list[tuple[dt.date, Path]] = []
     if not briefs_dir.exists():
-        return briefs
-    pattern = f"*_{topic}_weekly-brief.md"
-    for path in briefs_dir.glob(pattern):
+        return []
+    for path in briefs_dir.glob("* week *.md"):
         try:
             stem = path.stem
-            suffix = f"_{topic}_weekly-brief"
-            if not stem.endswith(suffix):
+            match = _WEEK_BRIEF_STEM_RE.match(stem.strip())
+            if not match:
                 continue
-            date_str = stem[: -len(suffix)]
-            brief_end_date = dt.date.fromisoformat(date_str)
-            if start_date <= brief_end_date <= end_date:
-                briefs.append(path)
+            year, week = int(match.group(1)), int(match.group(2))
+            # Last day of ISO week (Sunday)
+            week_end = dt.date.fromisocalendar(year, week, 7)
+            if start_date <= week_end <= end_date:
+                briefs.append((week_end, path))
         except (ValueError, TypeError):
             continue
-    return sorted(briefs)
+    briefs.sort(key=lambda x: x[0])
+    return [p for _, p in briefs]
+
+
+_MONTH_STEM_RE = re.compile(r"^(\d{4})-(\d{2})$")
 
 
 def load_monthly_roundups_for_year(
     year: int, topic: str, vault_root: Path | None = None
 ) -> list[Path]:
-    """Load monthly roundups for the topic and year, sorted chronologically."""
+    """Load monthly roundups in roundups_dir for the year, sorted chronologically. Parses stem as YYYY-MM."""
     paths = get_topic_paths(topic, vault_root)
-    briefs_dir = paths.briefs_dir
+    roundups_dir = paths.roundups_dir
     roundups: list[tuple[dt.date, Path]] = []
-    if not briefs_dir.exists():
+    if not roundups_dir.exists():
         return []
-    suffix = f"_{topic}_monthly-roundup"
-    for path in briefs_dir.glob(f"*{suffix}.md"):
-        stem = path.stem
-        if not stem.endswith(suffix):
-            continue
-        prefix = stem[: -len(suffix)]
+    for path in roundups_dir.glob("*.md"):
         try:
-            if len(prefix) == 10:
-                sort_date = dt.date.fromisoformat(prefix)
-            elif len(prefix) == 7:
-                y, m = int(prefix[:4]), int(prefix[5:7])
-                if m == 12:
-                    sort_date = dt.date(y, 12, 31)
-                else:
-                    sort_date = dt.date(y, m + 1, 1) - dt.timedelta(days=1)
-            else:
+            stem = path.stem
+            match = _MONTH_STEM_RE.match(stem)
+            if not match:
                 continue
-            if sort_date.year == year:
-                roundups.append((sort_date, path))
+            y, m = int(match.group(1)), int(match.group(2))
+            if y != year:
+                continue
+            last_day = dt.date(y, 12, 31) if m == 12 else dt.date(y, m + 1, 1) - dt.timedelta(days=1)
+            roundups.append((last_day, path))
         except (ValueError, TypeError):
             continue
     roundups.sort(key=lambda x: x[0])

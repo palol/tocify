@@ -83,10 +83,10 @@ def main(
     if len(roundup_paths) < 12:
         tqdm.write(f"[WARN] Only {len(roundup_paths)} monthly roundups for {year} (partial year)")
 
-    output_path = output or paths.briefs_dir / f"{year}_{topic}_annual-review.md"
+    output_path = output or paths.annual_dir / f"{year} review.md"
     log_path = paths.logs_dir / f"{year}_{topic}_annual-review.log.md"
 
-    paths.briefs_dir.mkdir(parents=True, exist_ok=True)
+    paths.annual_dir.mkdir(parents=True, exist_ok=True)
     paths.logs_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"[INFO] Generating annual review for {year} from {len(roundup_paths)} monthly roundups")
