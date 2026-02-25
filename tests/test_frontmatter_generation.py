@@ -84,6 +84,13 @@ def _load_monthly_module(frontmatter_module):
     sys.modules["tocify.frontmatter"] = frontmatter_module
     sys.modules["tqdm"] = tqdm_mod
 
+    nav_wikilinks_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "nav_wikilinks.py"
+    nav_spec = importlib.util.spec_from_file_location("tocify.runner.nav_wikilinks", nav_wikilinks_path)
+    nav_mod = importlib.util.module_from_spec(nav_spec)
+    assert nav_spec and nav_spec.loader
+    nav_spec.loader.exec_module(nav_mod)
+    sys.modules["tocify.runner.nav_wikilinks"] = nav_mod
+
     monthly_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "monthly.py"
     spec = importlib.util.spec_from_file_location("monthly_under_test", monthly_path)
     module = importlib.util.module_from_spec(spec)

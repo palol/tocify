@@ -11,6 +11,7 @@ from tocify.runner.roundup_common import (
     collect_source_metadata,
     sanitize_output_links,
 )
+from tocify.runner.nav_wikilinks import ensure_trailing_monthly_nav
 from tocify.runner.vault import (
     get_topic_paths,
     load_briefs_for_date_range,
@@ -55,6 +56,7 @@ def _apply_monthly_frontmatter(
     source_briefs: list[Path],
 ) -> None:
     body = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+    body = ensure_trailing_monthly_nav(body, month_iso)
     source_meta = collect_source_metadata(source_briefs)
     frontmatter = {
         "title": f"{topic.upper()} Monthly Roundup — {month_name}",

@@ -41,6 +41,7 @@ from tocify.runner.link_hygiene import (
     normalize_url_for_match,
     sanitize_markdown_links,
 )
+from tocify.runner.nav_wikilinks import ensure_trailing_weekly_nav
 from tocify.runner._utils import string_list as _string_list
 from tocify.runner.vault import VAULT_ROOT, get_topic_paths, run_structured_prompt
 
@@ -1424,7 +1425,9 @@ def run_weekly(
             "triage_backend": triage_metadata["triage_backend"],
             "triage_model": triage_metadata["triage_model"],
         }
-        brief_path.write_text(with_frontmatter(no_items_body, no_items_frontmatter), encoding="utf-8")
+        md = with_frontmatter(no_items_body, no_items_frontmatter)
+        md = ensure_trailing_weekly_nav(md, brief_filename)
+        brief_path.write_text(md, encoding="utf-8")
         print(f"No items; wrote {brief_path}")
         return
 
@@ -1584,6 +1587,7 @@ def run_weekly(
             f"invalid={hygiene_stats['invalid']}, "
             f"unmatched={hygiene_stats['unmatched']}"
         )
+        md = ensure_trailing_weekly_nav(md, brief_filename)
         brief_path.write_text(md, encoding="utf-8")
         print(f"Merged {len(kept)} new entries into {brief_path}")
     else:
@@ -1615,6 +1619,7 @@ def run_weekly(
             f"invalid={hygiene_stats['invalid']}, "
             f"unmatched={hygiene_stats['unmatched']}"
         )
+        md = ensure_trailing_weekly_nav(md, brief_filename)
         brief_path.write_text(md, encoding="utf-8")
         print(f"Wrote {brief_path}")
 

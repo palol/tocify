@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tocify"
-version = "0.8.6"
+version = "0.9.1"
 description = "Weekly Journal ToC Digest (RSS → triage → digest) and vault runner"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -35,6 +35,7 @@ include = ["tocify*"]
 
 [dependency-groups]
 dev = [
+    "pytest>=9.0.2",
     "ruff>=0.8.0",
     "vulture>=2.11",
 ]
