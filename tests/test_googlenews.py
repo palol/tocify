@@ -1,18 +1,23 @@
 """Unit tests for tocify.googlenews: fetch_google_news_items schema and date filtering."""
 
 import sys
+import types
 import unittest
 from pathlib import Path
 
-# Ensure project root is on path and tocify is the package (unittest discover -s tests can leave a wrong tocify in sys.modules)
+# Ensure project root is on path and tocify is importable from this repository.
 _root = Path(__file__).resolve().parent.parent
 _root_str = str(_root)
 if _root_str not in sys.path:
     sys.path.insert(0, _root_str)
-# Force re-import of tocify from project root so tocify.googlenews exists
-for key in list(sys.modules):
-    if key == "tocify" or key.startswith("tocify."):
-        del sys.modules[key]
+
+# Some tests monkeypatch sys.modules["tocify"] with a non-package stub.
+# Ensure imports here resolve against the real repository package path.
+tocify_mod = sys.modules.get("tocify")
+if tocify_mod is None or not hasattr(tocify_mod, "__path__"):
+    pkg = types.ModuleType("tocify")
+    pkg.__path__ = [str(_root / "tocify")]
+    sys.modules["tocify"] = pkg
 
 from datetime import date
 from types import SimpleNamespace

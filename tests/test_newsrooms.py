@@ -1,6 +1,20 @@
+import sys
+import types
 import unittest
 from datetime import date
+from pathlib import Path
 from unittest.mock import patch
+
+_root = Path(__file__).resolve().parent.parent
+_root_str = str(_root)
+if _root_str not in sys.path:
+    sys.path.insert(0, _root_str)
+
+tocify_mod = sys.modules.get("tocify")
+if tocify_mod is None or not hasattr(tocify_mod, "__path__"):
+    pkg = types.ModuleType("tocify")
+    pkg.__path__ = [str(_root / "tocify")]
+    sys.modules["tocify"] = pkg
 
 from tocify.newsrooms import _LinkExtractor, _fetch_newsroom_url
 from tocify.utils import sha1

@@ -33,6 +33,47 @@ def _read(path: Path) -> str:
 
 
 class TopicGardenerFootnoteTests(unittest.TestCase):
+    def test_create_uses_action_title_in_frontmatter(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            _apply_topic_action(
+                tmp_path,
+                {
+                    "action": "create",
+                    "slug": "bci",
+                    "title": "Brain Computer Interfaces",
+                    "body_markdown": "Fact at https://example.com/fact.",
+                    "sources": [],
+                    "links_to": [],
+                },
+                "2026-02-20",
+            )
+            content = _read(tmp_path / "bci.md")
+            frontmatter, _ = _split_frontmatter_and_body(content)
+            self.assertEqual(frontmatter.get("title"), "Brain Computer Interfaces")
+
+    def test_update_preserves_existing_title_when_action_title_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            topic_file = tmp_path / "bci.md"
+            topic_file.write_text(
+                "---\ntitle: \"Brain Computer Interfaces\"\n---\n\nBase content.",
+                encoding="utf-8",
+            )
+            _apply_topic_action(
+                tmp_path,
+                {
+                    "action": "update",
+                    "slug": "bci",
+                    "summary_addendum": "New milestone announced.",
+                    "append_sources": ["https://example.com/milestone"],
+                },
+                "2026-02-20",
+            )
+            content = _read(topic_file)
+            frontmatter, _ = _split_frontmatter_and_body(content)
+            self.assertEqual(frontmatter.get("title"), "Brain Computer Interfaces")
+
     def test_create_normalizes_paragraphs_to_fact_bullets(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             tmp_path = Path(td)

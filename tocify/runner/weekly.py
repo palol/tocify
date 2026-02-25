@@ -1119,6 +1119,7 @@ def _apply_topic_action(
 ) -> None:
     act = (action.get("action") or "").strip().lower()
     slug = (action.get("slug") or "").strip()
+    action_title = str(action.get("title") or "").strip()
     if not slug or act not in ("create", "update"):
         return
     slug = re.sub(r"[^a-z0-9\-]", "", slug.lower().replace("_", "-")) or "untitled"
@@ -1143,7 +1144,7 @@ def _apply_topic_action(
             raise ValueError("create action has body_markdown but no source URLs")
         body_with_footnotes = _with_source_footnotes(body_markdown, sources)
         frontmatter = {
-            "title": slug,
+            "title": action_title or slug,
             "date": today,
             "lastmod": today,
             "updated": today,
@@ -1195,7 +1196,7 @@ def _apply_topic_action(
         existing_sources = _string_list(existing_frontmatter.get("sources"))
         merged_sources = _dedupe_urls(existing_sources + used_sources)
         frontmatter = dict(existing_frontmatter)
-        frontmatter["title"] = slug
+        frontmatter["title"] = action_title or str(frontmatter.get("title") or slug)
         frontmatter["date"] = str(frontmatter.get("date") or today)
         frontmatter["lastmod"] = today
         frontmatter["updated"] = today
@@ -1518,21 +1519,22 @@ def run_weekly(
     tqdm.write(f"Sending {len(items)} RSS items to model (post-filter)")
 
     if USE_NEWSPAPER:
-        to_enrich = items[:NEWSPAPER_MAX_ITEMS]
-        disable_newspaper = not sys.stderr.isatty()
-        workers = min(NEWSPAPER_MAX_WORKERS, len(to_enrich))
-        with ThreadPoolExecutor(max_workers=workers) as ex:
-            list(
-                tqdm(
-                    ex.map(
-                        lambda it: enrich_item_with_newspaper(it, NEWSPAPER_TIMEOUT),
-                        to_enrich,
-                    ),
-                    total=len(to_enrich),
-                    desc="Newspaper",
-                    disable=disable_newspaper,
+        to_enrich = items[: max(0, int(NEWSPAPER_MAX_ITEMS))]
+        if to_enrich:
+            disable_newspaper = not sys.stderr.isatty()
+            workers = min(NEWSPAPER_MAX_WORKERS, len(to_enrich))
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                list(
+                    tqdm(
+                        ex.map(
+                            lambda it: enrich_item_with_newspaper(it, NEWSPAPER_TIMEOUT),
+                            to_enrich,
+                        ),
+                        total=len(to_enrich),
+                        desc="Newspaper",
+                        disable=disable_newspaper,
+                    )
                 )
-            )
 
     items_by_id = {it["id"]: it for it in items}
 
