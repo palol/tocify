@@ -20,6 +20,7 @@ from tocify.frontmatter import (
     split_frontmatter_and_body,
     with_frontmatter,
 )
+from tocify.google_news_link_resolver import resolve_google_news_links_in_items
 from tocify.runner.brief_writer import (
     build_allowed_url_index_from_link_rows as _build_allowed_url_index_from_link_rows,
     build_weekly_allowed_url_index as _build_weekly_allowed_url_index,
@@ -65,6 +66,10 @@ TOPIC_REDUNDANCY_ENABLED = env_bool("TOPIC_REDUNDANCY", True)
 TOPIC_REDUNDANCY_LOOKBACK_DAYS = env_int("TOPIC_REDUNDANCY_LOOKBACK_DAYS", 56)
 TOPIC_REDUNDANCY_BATCH_SIZE = env_int("TOPIC_REDUNDANCY_BATCH_SIZE", 25)
 TOPIC_GARDENER_ENABLED = env_bool("TOPIC_GARDENER", True)
+GOOGLE_NEWS_RESOLVE_LINKS = env_bool("GOOGLE_NEWS_RESOLVE_LINKS", True)
+GOOGLE_NEWS_RESOLVE_TIMEOUT = max(1, env_int("GOOGLE_NEWS_RESOLVE_TIMEOUT", 10))
+GOOGLE_NEWS_RESOLVE_MAX_REDIRECTS = max(1, env_int("GOOGLE_NEWS_RESOLVE_MAX_REDIRECTS", 10))
+GOOGLE_NEWS_RESOLVE_WORKERS = max(1, env_int("GOOGLE_NEWS_RESOLVE_WORKERS", 8))
 MAX_RANKED_TAGS = 8
 MAX_RANKED_TAG_CHARS = 40
 MAX_RANKED_WHY_CHARS = 320
@@ -1393,6 +1398,23 @@ def run_weekly(
                 print(f"Added {len(extra)} items from {','.join(backends)} (merged total {len(items)}) [topic={topic}]")
         except Exception as e:
             tqdm.write(f"[WARN] Weekly fetch (historical backends) failed: {e}")
+    items, link_resolution_stats = resolve_google_news_links_in_items(
+        items,
+        enabled=GOOGLE_NEWS_RESOLVE_LINKS,
+        timeout=GOOGLE_NEWS_RESOLVE_TIMEOUT,
+        max_redirects=GOOGLE_NEWS_RESOLVE_MAX_REDIRECTS,
+        workers=GOOGLE_NEWS_RESOLVE_WORKERS,
+    )
+    print(
+        "Google News link resolution: "
+        f"attempted={link_resolution_stats['attempted']}, "
+        f"resolved={link_resolution_stats['resolved']}, "
+        f"query_param_resolved={link_resolution_stats['query_param_resolved']}, "
+        f"redirect_resolved={link_resolution_stats['redirect_resolved']}, "
+        f"failed={link_resolution_stats['failed']}, "
+        f"skipped_non_google={link_resolution_stats['skipped_non_google']}, "
+        f"disabled={link_resolution_stats['disabled']}"
+    )
 
     paths.briefs_dir.mkdir(parents=True, exist_ok=True)
     paths.logs_dir.mkdir(parents=True, exist_ok=True)

@@ -11,8 +11,9 @@ import requests
 from tqdm import tqdm
 from dateutil import parser as dtparser
 from dotenv import load_dotenv
-from tocify.config import env_int, load_pipeline_config
+from tocify.config import env_bool, env_int, load_pipeline_config
 from tocify.frontmatter import aggregate_ranked_item_tags, with_frontmatter
+from tocify.google_news_link_resolver import resolve_google_news_links_in_items
 from tocify.utils import sha1
 
 load_dotenv()
@@ -29,6 +30,10 @@ MIN_SCORE_READ = PIPELINE_CONFIG.min_score_read
 MAX_RETURNED = PIPELINE_CONFIG.max_returned
 INTERESTS_MAX_CHARS = env_int("INTERESTS_MAX_CHARS", 3000)
 RSS_FETCH_TIMEOUT = env_int("RSS_FETCH_TIMEOUT", 25)
+GOOGLE_NEWS_RESOLVE_LINKS = env_bool("GOOGLE_NEWS_RESOLVE_LINKS", True)
+GOOGLE_NEWS_RESOLVE_TIMEOUT = max(1, env_int("GOOGLE_NEWS_RESOLVE_TIMEOUT", 10))
+GOOGLE_NEWS_RESOLVE_MAX_REDIRECTS = max(1, env_int("GOOGLE_NEWS_RESOLVE_MAX_REDIRECTS", 10))
+GOOGLE_NEWS_RESOLVE_WORKERS = max(1, env_int("GOOGLE_NEWS_RESOLVE_WORKERS", 8))
 
 
 # ---- tiny helpers ----
@@ -420,6 +425,23 @@ def main():
                     print(f"Added {len(gnews_items)} Google News items (merged total {len(items)})")
         except Exception as e:
             tqdm.write(f"[WARN] Google News fetch failed: {e}")
+    items, link_resolution_stats = resolve_google_news_links_in_items(
+        items,
+        enabled=GOOGLE_NEWS_RESOLVE_LINKS,
+        timeout=GOOGLE_NEWS_RESOLVE_TIMEOUT,
+        max_redirects=GOOGLE_NEWS_RESOLVE_MAX_REDIRECTS,
+        workers=GOOGLE_NEWS_RESOLVE_WORKERS,
+    )
+    print(
+        "Google News link resolution: "
+        f"attempted={link_resolution_stats['attempted']}, "
+        f"resolved={link_resolution_stats['resolved']}, "
+        f"query_param_resolved={link_resolution_stats['query_param_resolved']}, "
+        f"redirect_resolved={link_resolution_stats['redirect_resolved']}, "
+        f"failed={link_resolution_stats['failed']}, "
+        f"skipped_non_google={link_resolution_stats['skipped_non_google']}, "
+        f"disabled={link_resolution_stats['disabled']}"
+    )
     triage_metadata = {"triage_backend": "unknown", "triage_model": "unknown"}
     try:
         from tocify.integrations import get_triage_runtime_metadata

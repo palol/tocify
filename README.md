@@ -135,6 +135,14 @@ If backend is `cursor` and `agent` is not found, runner exits with an actionable
 Weekly brief generation canonicalizes `## [Title](url)` heading links using per-brief metadata rows (exact title first, then unique normalized-title match). If no deterministic canonical match is available, the existing rendered link is kept.
 Runner link hygiene now enforces Markdown hyperlink format across weekly/monthly/annual automation: trusted HTML anchors are converted to `[title](url)`, and untrusted links are de-linked.
 
+Google News destination resolution is enabled by default for digest and weekly flows. Any item link on `news.google.com` is resolved to the destination publisher URL when possible before dedupe/filtering and output rendering. If resolution fails, tocify keeps the original Google News URL.
+
+Google News link-resolution env toggles:
+- `GOOGLE_NEWS_RESOLVE_LINKS=1` (default on; set `0` to disable)
+- `GOOGLE_NEWS_RESOLVE_TIMEOUT=10` (seconds per request)
+- `GOOGLE_NEWS_RESOLVE_MAX_REDIRECTS=10`
+- `GOOGLE_NEWS_RESOLVE_WORKERS=8` (parallel resolution workers)
+
 **Commands** (use **`tocify`** when running the installed package)
 
 - **Weekly brief**: `tocify weekly --topic bci` or `tocify weekly --topic lookdeep "2025 week 2"`
