@@ -187,6 +187,8 @@ def _fetch_one_feed(
     cutoff: datetime,
     end_dt: datetime,
     timeout: int,
+    *,
+    require_date: bool = False,
 ) -> list[dict]:
     """Fetch one feed URL and return list of item dicts; on error return [] and log."""
     url = feed["url"]
@@ -210,6 +212,8 @@ def _fetch_one_feed(
         if not (title and link):
             continue
         dt = parse_date(e)
+        if require_date and dt is None:
+            continue
         if dt and (dt < cutoff or dt > end_dt):
             continue
         summary = re.sub(r"\s+", " ", (e.get("summary") or e.get("description") or "").strip())
@@ -240,9 +244,12 @@ def fetch_rss_items(feeds: list[dict], end_date: date | None = None) -> list[dic
     max_workers = min(env_int("RSS_FETCH_MAX_WORKERS", 10), len(feeds))
     max_workers = max(1, max_workers)
     items: list[dict] = []
+    require_date = end_date is not None
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [
-            executor.submit(_fetch_one_feed, feed, cutoff, end_dt, timeout)
+            executor.submit(
+                _fetch_one_feed, feed, cutoff, end_dt, timeout, require_date=require_date
+            )
             for feed in feeds
         ]
         for fut in futures:

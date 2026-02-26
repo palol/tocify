@@ -215,6 +215,19 @@ def parse_week_spec(s: str) -> str:
     return d.isoformat()
 
 
+def _parse_published_date(published_utc: str | None) -> date | None:
+    """Parse published_utc (ISO datetime string) to date; return None if missing or invalid."""
+    if not (published_utc and isinstance(published_utc, str)):
+        return None
+    s = published_utc.strip()
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        try:
+            return date.fromisoformat(s[:10])
+        except ValueError:
+            pass
+    return None
+
+
 def load_briefs_articles_urls(csv_path: Path, topic: str | None = None) -> set[str]:
     """Load and return normalized URLs from briefs_articles.csv, optionally filtered by topic."""
     seen = set()
@@ -1416,6 +1429,22 @@ def run_weekly(
         f"skipped_non_google={link_resolution_stats['skipped_non_google']}, "
         f"disabled={link_resolution_stats['disabled']}"
     )
+
+    if week_spec is not None:
+        before_week_filter = len(items)
+        items = [
+            it
+            for it in items
+            if (
+                (pub := _parse_published_date(it.get("published_utc"))) is not None
+                and week_start <= pub <= week_end
+            )
+        ]
+        if before_week_filter > len(items):
+            print(
+                f"Week window filter: dropped {before_week_filter - len(items)} items "
+                f"(published outside {week_start}–{week_end}), {len(items)} remaining"
+            )
 
     paths.weekly_dir.mkdir(parents=True, exist_ok=True)
     paths.logs_dir.mkdir(parents=True, exist_ok=True)
