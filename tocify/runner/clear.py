@@ -1,4 +1,4 @@
-"""Remove all data for a topic: briefs/logs matching *_<topic>_*, and that topic's rows from briefs_articles.csv.
+"""Remove all data for a topic: feeds/logs matching *_<topic>_*, and that topic's rows from briefs_articles.csv.
 Also provides cleanup of stray Cursor-produced action JSON files."""
 
 import csv
@@ -88,7 +88,7 @@ def main(topic: str, vault_root: Path | None = None, confirm: bool = False) -> N
 
     if not confirm:
         print(f"⚠️  WARNING: This will delete all data for topic '{topic}'!", file=sys.stderr)
-        print(f"   - Briefs and logs matching *_{topic}_*", file=sys.stderr)
+        print(f"   - Feed outputs and logs matching *_{topic}_*", file=sys.stderr)
         print(f"   - Rows for {topic} in content/briefs_articles.csv", file=sys.stderr)
         print("", file=sys.stderr)
         print('Type "yes" to confirm: ', end="", file=sys.stderr)
@@ -101,18 +101,18 @@ def main(topic: str, vault_root: Path | None = None, confirm: bool = False) -> N
             sys.exit(1)
 
     removed = 0
-    if paths.briefs_dir.exists():
-        for p in paths.briefs_dir.glob("* week *.md"):
+    if paths.weekly_dir.exists():
+        for p in paths.weekly_dir.glob("* week *.md"):
             if p.is_file():
                 p.unlink()
                 removed += 1
-    if paths.roundups_dir.exists():
-        for p in paths.roundups_dir.glob("*.md"):
+    if paths.monthly_dir.exists():
+        for p in paths.monthly_dir.glob("*.md"):
             if p.is_file():
                 p.unlink()
                 removed += 1
-    if paths.annual_dir.exists():
-        for p in paths.annual_dir.glob("* review.md"):
+    if paths.yearly_dir.exists():
+        for p in paths.yearly_dir.glob("* review.md"):
             if p.is_file():
                 p.unlink()
                 removed += 1
@@ -121,7 +121,7 @@ def main(topic: str, vault_root: Path | None = None, confirm: bool = False) -> N
             if p.is_file():
                 p.unlink()
                 removed += 1
-    print(f"Removed {removed} files for topic {topic} (weekly briefs, roundups, annual, logs)")
+    print(f"Removed {removed} files for topic {topic} (weekly/monthly/yearly feeds, logs)")
 
     csv_path = paths.briefs_articles_csv
     if csv_path.exists():

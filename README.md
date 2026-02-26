@@ -162,9 +162,9 @@ Google News link-resolution env toggles:
 - `config/interests.<topic>.md` — Keywords + Narrative (+ optional **Companies**; see [Company list](docs/sources.md#company-list-neurotech-startups))
 - `config/triage_prompt.txt` — Shared triage prompt
 - `content/briefs_articles.csv` — Chosen articles (topic column)
-- `content/briefs/` — Weekly briefs (`YYYY week N.md`)
-- `content/roundups/` — Monthly roundups (`YYYY-MM.md`)
-- `content/annual/` — Annual reviews (`YYYY review.md`)
+- `content/feeds/weekly/` — Weekly briefs (`YYYY week N.md`)
+- `content/feeds/monthly/` — Monthly roundups (`YYYY-MM.md`)
+- `content/feeds/yearly/` — Annual reviews (`YYYY review.md`)
 - `logs/` — Logs (at vault root; e.g. topic_actions_*.json, roundup logs)
 - `content/topics/` — Optional digital garden for topic redundancy and gardener
 
