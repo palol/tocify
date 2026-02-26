@@ -1,4 +1,4 @@
-"""Vault layout: per-topic feeds/interests, shared briefs/logs/csv. VAULT_ROOT from BCI_VAULT_ROOT."""
+"""Vault layout: per-topic feeds/interests, shared content feeds/logs/csv. VAULT_ROOT from BCI_VAULT_ROOT."""
 
 import datetime as dt
 import json
@@ -18,13 +18,13 @@ VAULT_ROOT = Path(os.environ.get("BCI_VAULT_ROOT", ".")).resolve()
 
 @dataclass(frozen=True)
 class TopicPaths:
-    """Paths for a single topic (unified briefs/roundups/annual/logs/csv dirs; per-topic feeds/interests)."""
+    """Paths for a single topic (unified feeds/logs/csv dirs; per-topic feeds/interests)."""
 
     feeds_path: Path
     interests_path: Path
-    briefs_dir: Path
-    roundups_dir: Path
-    annual_dir: Path
+    weekly_dir: Path
+    monthly_dir: Path
+    yearly_dir: Path
     logs_dir: Path
     briefs_articles_csv: Path
     prompt_path: Path
@@ -50,16 +50,16 @@ class PromptRunResult:
 
 
 def get_topic_paths(topic: str, vault_root: Path | None = None) -> TopicPaths:
-    """Return paths for the given topic. Same briefs_dir, roundups_dir, annual_dir, logs_dir, csv for all topics."""
+    """Return paths for the given topic. Same weekly/monthly/yearly dirs, logs_dir, csv for all topics."""
     root = vault_root or VAULT_ROOT
     config = root / "config"
     content = root / "content"
     return TopicPaths(
         feeds_path=config / f"feeds.{topic}.txt",
         interests_path=config / f"interests.{topic}.md",
-        briefs_dir=content / "briefs",
-        roundups_dir=content / "roundups",
-        annual_dir=content / "annual",
+        weekly_dir=content / "feeds" / "weekly",
+        monthly_dir=content / "feeds" / "monthly",
+        yearly_dir=content / "feeds" / "yearly",
         logs_dir=root / "logs",
         briefs_articles_csv=content / "briefs_articles.csv",
         prompt_path=config / "triage_prompt.txt",
@@ -90,13 +90,13 @@ _WEEK_BRIEF_STEM_RE = re.compile(r"^(\d{4})\s+week\s+(\d+)$")
 def load_briefs_for_date_range(
     start_date: dt.date, end_date: dt.date, topic: str, vault_root: Path | None = None
 ) -> list[Path]:
-    """Load weekly briefs in briefs_dir that fall within the date range. Parses stem as YYYY week N."""
+    """Load weekly briefs in weekly_dir that fall within the date range. Parses stem as YYYY week N."""
     paths = get_topic_paths(topic, vault_root)
-    briefs_dir = paths.briefs_dir
+    weekly_dir = paths.weekly_dir
     briefs: list[tuple[dt.date, Path]] = []
-    if not briefs_dir.exists():
+    if not weekly_dir.exists():
         return []
-    for path in briefs_dir.glob("* week *.md"):
+    for path in weekly_dir.glob("* week *.md"):
         try:
             stem = path.stem
             match = _WEEK_BRIEF_STEM_RE.match(stem.strip())
@@ -119,13 +119,13 @@ _MONTH_STEM_RE = re.compile(r"^(\d{4})-(\d{2})$")
 def load_monthly_roundups_for_year(
     year: int, topic: str, vault_root: Path | None = None
 ) -> list[Path]:
-    """Load monthly roundups in roundups_dir for the year, sorted chronologically. Parses stem as YYYY-MM."""
+    """Load monthly roundups in monthly_dir for the year, sorted chronologically. Parses stem as YYYY-MM."""
     paths = get_topic_paths(topic, vault_root)
-    roundups_dir = paths.roundups_dir
+    monthly_dir = paths.monthly_dir
     roundups: list[tuple[dt.date, Path]] = []
-    if not roundups_dir.exists():
+    if not monthly_dir.exists():
         return []
-    for path in roundups_dir.glob("*.md"):
+    for path in monthly_dir.glob("*.md"):
         try:
             stem = path.stem
             match = _MONTH_STEM_RE.match(stem)

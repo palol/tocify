@@ -1417,13 +1417,13 @@ def run_weekly(
         f"disabled={link_resolution_stats['disabled']}"
     )
 
-    paths.briefs_dir.mkdir(parents=True, exist_ok=True)
+    paths.weekly_dir.mkdir(parents=True, exist_ok=True)
     paths.logs_dir.mkdir(parents=True, exist_ok=True)
     # Layout: briefs as "YYYY week N.md" (ISO week from week_of Monday)
     week_date = datetime.strptime(week_of, "%Y-%m-%d").date()
     year_iso, week_iso, _ = week_date.isocalendar()
     brief_filename = f"{year_iso} week {week_iso:02d}.md"
-    brief_path = paths.briefs_dir / brief_filename
+    brief_path = paths.weekly_dir / brief_filename
 
     if not items:
         if brief_path.exists():

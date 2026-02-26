@@ -18,9 +18,9 @@ def _load_weekly_module():
             feeds_path=root / "config" / f"feeds.{topic}.txt",
             interests_path=root / "config" / f"interests.{topic}.md",
             prompt_path=root / "config" / "triage_prompt.txt",
-            briefs_dir=root / "content" / "briefs",
-            roundups_dir=root / "content" / "roundups",
-            annual_dir=root / "content" / "annual",
+            weekly_dir=root / "content" / "feeds" / "weekly",
+            monthly_dir=root / "content" / "feeds" / "monthly",
+            yearly_dir=root / "content" / "feeds" / "yearly",
             logs_dir=root / "logs",
             briefs_articles_csv=root / "content" / "briefs_articles.csv",
             edgar_ciks_path=root / "config" / f"edgar_ciks.{topic}.txt",
@@ -81,7 +81,7 @@ class WeeklyGoogleNewsResolutionTests(unittest.TestCase):
             root = Path(td)
             write_runner_inputs(root)
             weekly.run_weekly(topic="bci", week_spec="2026 week 8", dry_run=0, vault_root=root)
-            brief_path = root / "content" / "briefs" / "2026 week 08.md"
+            brief_path = root / "content" / "feeds" / "weekly" / "2026 week 08.md"
             content = brief_path.read_text(encoding="utf-8")
             csv_text = (root / "content" / "briefs_articles.csv").read_text(encoding="utf-8")
 

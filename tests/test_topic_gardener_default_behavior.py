@@ -15,9 +15,9 @@ def _load_weekly_module():
             feeds_path=root / "config" / f"feeds.{topic}.txt",
             interests_path=root / "config" / f"interests.{topic}.md",
             prompt_path=root / "config" / "triage_prompt.txt",
-            briefs_dir=root / "content" / "briefs",
-            roundups_dir=root / "content" / "roundups",
-            annual_dir=root / "content" / "annual",
+            weekly_dir=root / "content" / "feeds" / "weekly",
+            monthly_dir=root / "content" / "feeds" / "monthly",
+            yearly_dir=root / "content" / "feeds" / "yearly",
             logs_dir=root / "logs",
             briefs_articles_csv=root / "content" / "briefs_articles.csv",
             edgar_ciks_path=root / "config" / f"edgar_ciks.{topic}.txt",
@@ -139,9 +139,9 @@ class TopicGardenerDefaultBehaviorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             write_runner_inputs(root)
-            briefs_dir = root / "content" / "briefs"
-            briefs_dir.mkdir(parents=True, exist_ok=True)
-            brief_path = briefs_dir / "2026-02-16_bci_weekly-brief.md"
+            weekly_dir = root / "content" / "feeds" / "weekly"
+            weekly_dir.mkdir(parents=True, exist_ok=True)
+            brief_path = weekly_dir / "2026 week 08.md"
             brief_path.write_text(
                 (
                     "---\n"
@@ -166,7 +166,7 @@ class TopicGardenerDefaultBehaviorTests(unittest.TestCase):
                 (
                     "topic,week_of,url,title,source,published_utc,score,brief_filename,why,tags\n"
                     "bci,2026-02-16,https://example.com/old,Existing item,Journal,2026-02-16T00:00:00+00:00,0.80,"
-                    "2026-02-16_bci_weekly-brief.md,Relevant,old\n"
+                    "2026 week 08.md,Relevant,old\n"
                 ),
                 encoding="utf-8",
             )
