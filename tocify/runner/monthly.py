@@ -24,7 +24,7 @@ ROUNDUP_PROMPT_TEMPLATE = """You are helping an expert analyst prepare a monthly
 
 **Use the Minto Pyramid Principle: structure the roundup to lead with the main conclusions and storylines, then organize supporting information hierarchically.**
 
-Return only the **markdown body** of the roundup (no YAML frontmatter). We will add frontmatter and save the file.
+We will save the roundup to: `{output_path}`. Return **only** the markdown body in your response (stdout). Do not create or write to any file; we will add frontmatter and write the file ourselves.
 Your response must be the **final roundup article**—ready to publish. Do not output a plan, outline, or description of what you will write.
 Do not use meta-language (e.g. "I will…", "This section will…"). Write the roundup itself: concrete conclusions and storylines drawn only from the weekly briefs.
 Use Markdown link syntax `[title](url)` for hyperlinks. Do not use HTML anchor tags like `<a href="...">...</a>`.
@@ -120,6 +120,7 @@ def main(
             month_name=month_name,
             brief_refs=brief_refs,
             topic_upper=topic.upper(),
+            output_path=str(roundup_filename.resolve()),
         )
 
         no_content_fallback = f"# {topic.upper()} Monthly Roundup — {month_name}\n\n*No content produced.*\n"

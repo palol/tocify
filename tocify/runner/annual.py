@@ -22,7 +22,7 @@ ANNUAL_REVIEW_PROMPT_TEMPLATE = """You are helping an expert analyst prepare an 
 
 **Use the Minto Pyramid Principle: structure the review to lead with the main conclusions and storylines of the year, then organize supporting information hierarchically.**
 
-Return only the **markdown body** of the review (no YAML frontmatter). We will add frontmatter and save the file.
+We will save the review to: `{output_path}`. Return **only** the markdown body in your response (stdout). Do not create or write to any file; we will add frontmatter and write the file ourselves.
 Your response must be the **final annual review article**—ready to publish. Do not output a plan, outline, or description of what you will write.
 Do not use meta-language (e.g. "I will…", "This section will…"). Write the review itself: concrete conclusions, events, and storylines drawn only from the monthly roundups.
 Use Markdown link syntax `[title](url)` for hyperlinks. Do not use HTML anchor tags like `<a href="...">...</a>`.
@@ -102,6 +102,7 @@ def main(
         year=year,
         roundup_refs=roundup_refs,
         topic_upper=topic.upper(),
+        output_path=str(output_path.resolve()),
     )
 
     try:
