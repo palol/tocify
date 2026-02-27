@@ -17,6 +17,7 @@ from tqdm import tqdm
 from tocify.config import env_bool, env_int, load_pipeline_config
 from tocify.utils import normalize_summary
 from tocify.frontmatter import (
+    default_note_frontmatter,
     normalize_ai_tags,
     split_frontmatter_and_body,
     with_frontmatter,
@@ -1154,7 +1155,8 @@ def _apply_topic_action(
         if body_markdown and not sources:
             raise ValueError("create action has body_markdown but no source URLs")
         body_with_footnotes = _with_source_footnotes(body_markdown, sources)
-        frontmatter = {
+        frontmatter = default_note_frontmatter()
+        frontmatter.update({
             "title": action_title or slug,
             "date": today,
             "lastmod": today,
@@ -1167,7 +1169,7 @@ def _apply_topic_action(
             "triage_model": triage_model,
             "sources": sources,
             "links_to": links_to,
-        }
+        })
         path.write_text(with_frontmatter(body_with_footnotes, frontmatter), encoding="utf-8")
         return
 
@@ -1206,7 +1208,8 @@ def _apply_topic_action(
         updated_body = _compose_body_with_footnote_definitions(body_with_updates, definitions)
         existing_sources = _string_list(existing_frontmatter.get("sources"))
         merged_sources = _dedupe_urls(existing_sources + used_sources)
-        frontmatter = dict(existing_frontmatter)
+        frontmatter = default_note_frontmatter()
+        frontmatter.update(existing_frontmatter)
         frontmatter["title"] = action_title or str(frontmatter.get("title") or slug)
         frontmatter["date"] = str(frontmatter.get("date") or today)
         frontmatter["lastmod"] = today
@@ -1461,7 +1464,8 @@ def run_weekly(
             f"# {no_items_display_title}\n\n"
             f"_No RSS items found in the last {LOOKBACK_DAYS} days._\n"
         )
-        no_items_frontmatter = {
+        no_items_frontmatter = default_note_frontmatter()
+        no_items_frontmatter.update({
             "date": week_of,
             "date created": f"{week_of} 00:00:00",
             "lastmod": datetime.now(timezone.utc).date().isoformat(),
@@ -1474,7 +1478,7 @@ def run_weekly(
             "scored": 0,
             "triage_backend": triage_metadata["triage_backend"],
             "triage_model": triage_metadata["triage_model"],
-        }
+        })
         md = with_frontmatter(no_items_body, no_items_frontmatter)
         md = ensure_trailing_weekly_nav(md, brief_filename)
         brief_path.write_text(md, encoding="utf-8")

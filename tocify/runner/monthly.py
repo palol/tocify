@@ -5,7 +5,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from tocify.frontmatter import split_frontmatter_and_body, with_frontmatter
+from tocify.frontmatter import default_note_frontmatter, split_frontmatter_and_body, with_frontmatter
 from tocify.runner.roundup_common import (
     build_allowed_url_index_from_sources,
     collect_source_metadata,
@@ -60,7 +60,8 @@ def _apply_monthly_frontmatter(
     _, body = split_frontmatter_and_body(raw)
     body = ensure_trailing_monthly_nav(body, month_iso)
     source_meta = collect_source_metadata(source_briefs)
-    frontmatter = {
+    frontmatter = default_note_frontmatter()
+    frontmatter.update({
         "title": output_path.stem,
         "date": end_date.isoformat(),
         "date created": f"{end_date.isoformat()} 00:00:00",
@@ -74,7 +75,7 @@ def _apply_monthly_frontmatter(
         "triage_model": source_meta["triage_model"],
         "triage_backends": source_meta.get("triage_backends"),
         "triage_models": source_meta.get("triage_models"),
-    }
+    })
     output_path.write_text(with_frontmatter(body, frontmatter), encoding="utf-8")
 
 

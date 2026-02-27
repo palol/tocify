@@ -5,7 +5,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from tocify.frontmatter import with_frontmatter
+from tocify.frontmatter import default_note_frontmatter, split_frontmatter_and_body, with_frontmatter
 from tocify.runner.roundup_common import (
     build_allowed_url_index_from_sources,
     collect_source_metadata,
@@ -49,9 +49,11 @@ def _apply_annual_frontmatter(
     topic: str,
     source_roundups: list[Path],
 ) -> None:
-    body = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+    raw = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+    _, body = split_frontmatter_and_body(raw)
     source_meta = collect_source_metadata(source_roundups)
-    frontmatter = {
+    frontmatter = default_note_frontmatter()
+    frontmatter.update({
         "title": output_path.stem,
         "date": f"{year}-12-31",
         "date created": f"{year}-12-31 00:00:00",
@@ -65,7 +67,7 @@ def _apply_annual_frontmatter(
         "triage_model": source_meta["triage_model"],
         "triage_backends": source_meta.get("triage_backends"),
         "triage_models": source_meta.get("triage_models"),
-    }
+    })
     output_path.write_text(with_frontmatter(body, frontmatter), encoding="utf-8")
 
 
