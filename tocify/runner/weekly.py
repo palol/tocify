@@ -45,6 +45,7 @@ from tocify.runner.link_hygiene import (
     sanitize_markdown_links,
 )
 from tocify.runner.nav_wikilinks import ensure_trailing_weekly_nav
+from tocify.runner.prompt_templates import load_prompt_template as load_runner_prompt
 from tocify.runner._utils import string_list as _string_list
 from tocify.runner.vault import VAULT_ROOT, get_topic_paths, run_structured_prompt
 
@@ -571,39 +572,6 @@ def filter_topic_redundant_items(
 
 
 # ---- topic gardener ----
-TOPIC_GARDENER_PROMPT = """You are curating a **global digital garden** of evergreen topic pages.
-
-Below are (1) this week's weekly brief, and (2) existing topic files. Propose **create** or **update** actions.
-
-Return only the JSON object; we will create or update topic files from it. Do not write to any file path.
-
-Rules:
-- **create**: New topic when the brief introduces a distinct theme. Use lowercase-hyphen slug. Include title, body_markdown, sources, links_to, tags.
-  - When the brief mentions a **tracked company** (see list below), prefer creating a topic page for that company if one does not exist.
-  - `body_markdown` must be a **fact bullet list** (`- Fact...`), not prose paragraphs. Write the actual fact bullets drawn from the brief, not a description of what to add.
-- **update**: Only when the brief adds genuinely new knowledge to an existing topic. Provide slug, append_sources, optionally summary_addendum, summary_addendum_sources, and tags.
-  - `summary_addendum` must be a **fact bullet list** (`- Fact...`) when present. Write the actual fact bullets, not a description of what to add.
-- Each bullet in `summary_addendum` must map to exactly one source URL in `summary_addendum_sources` (same order, same length).
-- Use source attribution with markdown footnotes, e.g. [^1] and [^1]: https://example.com.
-- For inline hyperlinks in markdown fields, use Markdown syntax `[title](url)`. Do not use HTML anchors like `<a href="...">...</a>`.
-- If no new knowledge is present, do not emit an update action.
-
-Tracked companies (strong candidates for new topic pages when mentioned in the brief):
-{tracked_companies}
-
-This week's brief (category: {topic}):
-{brief_content}
-
-Existing topic files (slug and preview):
-{existing_topics}
-
-Return **only** a single JSON object. Schema:
-{{"topic_actions": [{{ "action": "create" | "update", "slug": "<slug>", "title": "<title>", "body_markdown": "<markdown>", "sources": ["url"], "links_to": ["slug"], "append_sources": ["url"], "summary_addendum": "<markdown>", "summary_addendum_sources": ["url"], "tags": ["tag"] }}]}}
-Bullet examples for markdown fields:
-- body_markdown: "- Fact one.\\n- Fact two."
-- summary_addendum: "- New finding one.\\n- New finding two."
-Omit topic_actions or use [] if nothing to do."""
-
 TOPIC_GARDENER_SCHEMA = {
     "type": "object",
     "properties": {
@@ -1086,6 +1054,7 @@ def _list_existing_topic_previews(topics_dir: Path, max_preview_chars: int = 400
 
 
 def _call_cursor_topic_gardener(
+    prompt_template: str,
     brief_content: str,
     existing_topics: list[dict],
     topic: str,
@@ -1097,7 +1066,7 @@ def _call_cursor_topic_gardener(
         f"- **{t['slug']}**:\n{t['preview']}" for t in existing_topics
     ) or "(no existing topics yet)"
     companies_str = ", ".join((tracked_companies or [])[:100]) or "(none)"
-    prompt = TOPIC_GARDENER_PROMPT.format(
+    prompt = prompt_template.format(
         topic=topic,
         brief_content=brief_content,
         existing_topics=existing_str,
@@ -1234,6 +1203,7 @@ def run_topic_gardener(
     allowed_source_url_index: dict[str, str] | None = None,
     existing_topics: list[dict] | None = None,
     tracked_companies: list[str] | None = None,
+    gardener_prompt_path: Path | None = None,
 ) -> None:
     """Run topic gardener on a brief: suggest create/update topic pages and apply actions under topics_dir."""
     topics_dir.mkdir(parents=True, exist_ok=True)
@@ -1243,9 +1213,11 @@ def run_topic_gardener(
     brief_meta = _extract_brief_metadata(brief_path)
     if existing_topics is None:
         existing_topics = _list_existing_topic_previews(topics_dir)
+    gardener_template = load_runner_prompt("gardener_prompt.txt", gardener_prompt_path)
     disable = not sys.stderr.isatty()
     with tqdm(desc="Topic gardener (agent)", total=None, unit="", disable=disable):
         actions = _call_cursor_topic_gardener(
+            gardener_template,
             brief_content,
             existing_topics,
             topic,
@@ -1704,5 +1676,6 @@ def run_weekly(
             allowed_source_url_index=gardener_source_url_index,
             existing_topics=topic_data[1] if topic_data else None,
             tracked_companies=interests.get("companies", []),
+            gardener_prompt_path=paths.gardener_prompt_path,
         )
         clean_stray_action_json_in_logs(paths.logs_dir, f"topic_actions_{week_of}_{topic}.json")

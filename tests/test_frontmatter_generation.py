@@ -91,6 +91,13 @@ def _load_monthly_module(frontmatter_module):
     nav_spec.loader.exec_module(nav_mod)
     sys.modules["tocify.runner.nav_wikilinks"] = nav_mod
 
+    prompt_templates_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "prompt_templates.py"
+    pt_spec = importlib.util.spec_from_file_location("tocify.runner.prompt_templates", prompt_templates_path)
+    pt_mod = importlib.util.module_from_spec(pt_spec)
+    assert pt_spec and pt_spec.loader
+    pt_spec.loader.exec_module(pt_mod)
+    sys.modules["tocify.runner.prompt_templates"] = pt_mod
+
     monthly_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "monthly.py"
     spec = importlib.util.spec_from_file_location("monthly_under_test", monthly_path)
     module = importlib.util.module_from_spec(spec)
@@ -135,6 +142,13 @@ def _load_annual_module(frontmatter_module):
     sys.modules["tocify.runner.roundup_common"] = roundup_mod
     sys.modules["tocify.frontmatter"] = frontmatter_module
     sys.modules["tqdm"] = tqdm_mod
+
+    prompt_templates_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "prompt_templates.py"
+    pt_spec = importlib.util.spec_from_file_location("tocify.runner.prompt_templates", prompt_templates_path)
+    pt_mod = importlib.util.module_from_spec(pt_spec)
+    assert pt_spec and pt_spec.loader
+    pt_spec.loader.exec_module(pt_mod)
+    sys.modules["tocify.runner.prompt_templates"] = pt_mod
 
     annual_path = Path(__file__).resolve().parents[1] / "tocify" / "runner" / "annual.py"
     spec = importlib.util.spec_from_file_location("annual_under_test", annual_path)

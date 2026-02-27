@@ -161,6 +161,9 @@ Google News link-resolution env toggles:
 - `config/feeds.<topic>.txt` — RSS feeds (Name | URL)
 - `config/interests.<topic>.md` — Keywords + Narrative (+ optional **Companies**; see [Company list](docs/sources.md#company-list-neurotech-startups))
 - `config/triage_prompt.txt` — Shared triage prompt
+- `config/gardener_prompt.txt` — Topic gardener prompt (optional; defaults to bundled template)
+- `config/monthly_roundup_prompt.txt` — Monthly roundup prompt (optional)
+- `config/annual_review_prompt.txt` — Annual review prompt (optional)
 - `content/briefs_articles.csv` — Chosen articles (topic column)
 - `content/feeds/weekly/` — Weekly briefs (`YYYY week N.md`)
 - `content/feeds/monthly/` — Monthly roundups (`YYYY-MM.md`)
