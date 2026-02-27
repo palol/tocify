@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import tempfile
 import time
 
 from tocify.integrations._shared import (
@@ -35,16 +36,20 @@ def call_cursor_triage(interests: dict, items: list[dict], prompt_path: str | No
         interests, items, summary_max_chars=SUMMARY_MAX_CHARS, prompt_path=prompt_path
     )
     prompt = prompt + CURSOR_PROMPT_SUFFIX
-    args = ["agent", "-p", "--output-format", "text", "--trust"]
     last = None
     timeout = CURSOR_TIMEOUT if CURSOR_TIMEOUT > 0 else None
     for attempt in range(CURSOR_RETRIES):
+        with tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".txt", encoding="utf-8"
+        ) as f:
+            f.write(prompt)
+            temp_path = f.name
         try:
+            args = ["agent", "-p", temp_path, "--output-format", "text", "--trust"]
             result = subprocess.run(
                 args,
                 capture_output=True,
                 text=True,
-                input=prompt,
                 env=os.environ,
                 timeout=timeout,
             )
@@ -59,4 +64,9 @@ def call_cursor_triage(interests: dict, items: list[dict], prompt_path: str | No
             last = e
             if attempt == 0:
                 time.sleep(3)
+        finally:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
     raise last
