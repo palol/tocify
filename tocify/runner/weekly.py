@@ -15,6 +15,7 @@ from newspaper import Article
 from tqdm import tqdm
 
 from tocify.config import env_bool, env_int, load_pipeline_config
+from tocify.utils import normalize_summary
 from tocify.frontmatter import (
     normalize_ai_tags,
     split_frontmatter_and_body,
@@ -354,12 +355,9 @@ def enrich_item_with_newspaper(item: dict, timeout: int) -> dict:
     except (FuturesTimeoutError, Exception):
         return item
 
-    text = re.sub(r"\s+", " ", (text or "").strip())
-    if not text:
+    if not (text or "").strip():
         return item
-    if len(text) > SUMMARY_MAX_CHARS:
-        text = text[:SUMMARY_MAX_CHARS] + "…"
-    item["summary"] = text
+    item["summary"] = normalize_summary(text, SUMMARY_MAX_CHARS)
     return item
 
 
@@ -461,7 +459,7 @@ def _call_cursor_topic_redundancy(
             "title": it.get("title", ""),
             "link": it.get("link", ""),
             "source": it.get("source", ""),
-            "summary": (it.get("summary") or "")[:SUMMARY_MAX_CHARS],
+            "summary": normalize_summary(it.get("summary") or "", SUMMARY_MAX_CHARS),
         }
         for it in items
     ]

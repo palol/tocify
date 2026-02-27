@@ -7,6 +7,8 @@ single source of truth. Cursor has no schema API and uses prompt-only + parse.
 import json
 import os
 
+from tocify.utils import normalize_summary
+
 REQUIRED_PROMPT_PLACEHOLDERS = (
     "{{ITEMS}}",
     "{{KEYWORDS}}",
@@ -74,7 +76,7 @@ def build_triage_prompt(
             "title": it["title"],
             "link": it["link"],
             "published_utc": it.get("published_utc"),
-            "summary": (it.get("summary") or "")[:summary_max_chars],
+            "summary": normalize_summary(it.get("summary") or "", summary_max_chars),
         }
         for it in items
     ]

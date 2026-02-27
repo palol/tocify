@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from tocify.config import env_bool, env_int, load_pipeline_config
 from tocify.frontmatter import aggregate_ranked_item_tags, with_frontmatter
 from tocify.google_news_link_resolver import resolve_google_news_links_in_items
-from tocify.utils import sha1
+from tocify.utils import normalize_summary, sha1
 
 load_dotenv()
 
@@ -216,9 +216,10 @@ def _fetch_one_feed(
             continue
         if dt and (dt < cutoff or dt > end_dt):
             continue
-        summary = re.sub(r"\s+", " ", (e.get("summary") or e.get("description") or "").strip())
-        if len(summary) > SUMMARY_MAX_CHARS:
-            summary = summary[:SUMMARY_MAX_CHARS] + "…"
+        raw_summary = e.get("summary") or e.get("description") or ""
+        if hasattr(raw_summary, "get"):
+            raw_summary = raw_summary.get("value", "") if isinstance(raw_summary, dict) else str(raw_summary)
+        summary = normalize_summary(str(raw_summary), SUMMARY_MAX_CHARS)
         items.append({
             "id": sha1(f"{source}|{title}|{link}"),
             "source": source,
