@@ -78,7 +78,17 @@ def run_csv2md(input_path: Path, output_path: Path) -> int:
                     if col == "url":
                         cells_row.append(_link_cell(row))
                     elif col == "week_of":
-                        cells_row.append(f"[[{row.get(col).strip()}]]")
+                        raw = (row.get(col) or "").strip()
+                        if not raw:
+                            cells_row.append("")
+                        else:
+                            try:
+                                d = date.fromisoformat(raw)
+                                iso_year, iso_week, _ = d.isocalendar()
+                                link_text = f"{iso_year} week {iso_week:02d}"
+                                cells_row.append(f"[[{link_text}]]")
+                            except ValueError:
+                                cells_row.append(f"[[{raw}]]")
                     else:
                         cells_row.append((row.get(col) or "").strip())
                 data_rows.append(cells_row)
