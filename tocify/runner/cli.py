@@ -171,7 +171,7 @@ def cmd_csv2md(args: argparse.Namespace) -> None:
     """Convert briefs_articles.csv to markdown table with frontmatter (run after weekly)."""
     vault = getattr(args, "vault", None) or Path(".")
     input_path = args.input if args.input is not None else vault / "content" / "briefs_articles.csv"
-    output_path = args.output if args.output is not None else vault / "content" / "article database.md"
+    output_path = args.output if args.output is not None else vault / "content" / "articles.md"
     sys.exit(run_csv2md(input_path, output_path))
 
 
