@@ -77,6 +77,8 @@ def run_csv2md(input_path: Path, output_path: Path) -> int:
                 for col in export_columns:
                     if col == "url":
                         cells_row.append(_link_cell(row))
+                    elif col == "week_of":
+                        cells_row.append(f"[[{row.get(col).strip()}]]")
                     else:
                         cells_row.append((row.get(col) or "").strip())
                 data_rows.append(cells_row)
