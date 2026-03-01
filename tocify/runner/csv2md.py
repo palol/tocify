@@ -36,8 +36,8 @@ def _frontmatter_created(path: Path) -> str | None:
 def _build_frontmatter(created: str, modified: str) -> str:
     """Canonical order per scripts/standardize-headers.mjs."""
     return f"""---
-title: "Briefs articles database"
-publish: false
+title: "Articles Database"
+publish: true
 created: {created}
 modified: {modified}
 description: "Markdown table of briefs articles derived from briefs_articles.csv"
