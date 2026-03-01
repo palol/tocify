@@ -12,7 +12,7 @@ from tqdm import tqdm
 from dateutil import parser as dtparser
 from dotenv import load_dotenv
 from tocify.config import env_bool, env_int, load_pipeline_config
-from tocify.frontmatter import aggregate_ranked_item_tags, with_frontmatter
+from tocify.frontmatter import aggregate_ranked_item_tags, default_note_frontmatter, with_frontmatter
 from tocify.google_news_link_resolver import resolve_google_news_links_in_items
 from tocify.utils import normalize_summary, sha1
 
@@ -383,7 +383,8 @@ def render_digest_md(result: dict, items_by_id: dict[str, dict]) -> str:
             lines += ["<details>", "<summary>RSS summary</summary>", "", summary, "", "</details>", ""]
         lines += ["---", ""]
     body = "\n".join(lines)
-    frontmatter = {
+    frontmatter = default_note_frontmatter()
+    frontmatter.update({
         "title": "digest",
         "date": week_of,
         "date created": f"{week_of} 00:00:00",
@@ -396,7 +397,7 @@ def render_digest_md(result: dict, items_by_id: dict[str, dict]) -> str:
         "scored": len(ranked),
         "triage_backend": triage_backend,
         "triage_model": triage_model,
-    }
+    })
     return with_frontmatter(body, frontmatter)
 
 
@@ -464,7 +465,8 @@ def main():
             f"# Weekly ToC Digest (week of {today})\n\n"
             f"_No RSS items found in the last {LOOKBACK_DAYS} days._\n"
         )
-        no_items_frontmatter = {
+        no_items_frontmatter = default_note_frontmatter()
+        no_items_frontmatter.update({
             "title": "digest",
             "date": today,
             "date created": f"{today} 00:00:00",
@@ -477,7 +479,7 @@ def main():
             "scored": 0,
             "triage_backend": triage_metadata["triage_backend"],
             "triage_model": triage_metadata["triage_model"],
-        }
+        })
         with open("digest.md", "w", encoding="utf-8") as f:
             f.write(with_frontmatter(no_items_body, no_items_frontmatter))
         print("No items; wrote digest.md")

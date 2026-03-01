@@ -7,7 +7,12 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from tocify.frontmatter import aggregate_ranked_item_tags, normalize_ai_tags, with_frontmatter
+from tocify.frontmatter import (
+    aggregate_ranked_item_tags,
+    default_note_frontmatter,
+    normalize_ai_tags,
+    with_frontmatter,
+)
 from tocify.runner._utils import string_list as _string_list
 from tocify.runner.link_hygiene import build_allowed_url_index, is_valid_http_url
 
@@ -56,7 +61,8 @@ def render_brief_md(
 
     lines.extend(render_brief_entry_blocks(kept, items_by_id).splitlines())
     body = "\n".join(lines)
-    frontmatter = {
+    frontmatter = default_note_frontmatter()
+    frontmatter.update({
         "date": week_of,
         "date created": _weekly_date_created_utc(week_of),
         "lastmod": today,
@@ -69,7 +75,7 @@ def render_brief_md(
         "scored": len(ranked),
         "triage_backend": triage_backend,
         "triage_model": triage_model,
-    }
+    })
     return with_frontmatter(body, frontmatter)
 
 
@@ -139,6 +145,8 @@ def merge_brief_frontmatter(
     Does not overwrite 'date created'; keeps the original.
     """
     merged = dict(existing_frontmatter)
+    default_fm = default_note_frontmatter()
+    merged["publish"] = existing_frontmatter.get("publish", default_fm.get("publish", False))
     merged["included"] = merged_included
     merged["scored"] = merged_scored
     merged["lastmod"] = datetime.now(timezone.utc).date().isoformat()

@@ -13,6 +13,9 @@ def _get_topic_paths(topic: str, vault_root: Path | None = None):
         feeds_path=root / "config" / f"feeds.{topic}.txt",
         interests_path=root / "config" / f"interests.{topic}.md",
         prompt_path=root / "config" / "triage_prompt.txt",
+        gardener_prompt_path=root / "config" / "gardener_prompt.txt",
+        monthly_prompt_path=root / "config" / "monthly_roundup_prompt.txt",
+        annual_prompt_path=root / "config" / "annual_review_prompt.txt",
         weekly_dir=root / "content" / "feeds" / "weekly",
         monthly_dir=root / "content" / "feeds" / "monthly",
         yearly_dir=root / "content" / "feeds" / "yearly",
@@ -112,6 +115,7 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
         self.assertNotIn("https://fake.example.com/a", content)
 
     def test_run_weekly_new_brief_frontmatter_omits_title(self) -> None:
+        """New weekly brief uses note template; title is empty (no display title in frontmatter)."""
         weekly, frontmatter_module = _load_weekly_module_and_frontmatter()
         weekly.TOPIC_REDUNDANCY_ENABLED = False
         weekly.TOPIC_GARDENER_ENABLED = False
@@ -123,9 +127,12 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
             brief_path = root / "content" / "feeds" / "weekly" / "2026 week 08.md"
             frontmatter = _read_frontmatter(frontmatter_module, brief_path)
 
-        self.assertNotIn("title", frontmatter)
+        self.assertFalse(frontmatter.get("publish"))
+        self.assertIn("generator", frontmatter)
+        self.assertTrue(frontmatter.get("title") == "" or frontmatter.get("title") is None)
 
     def test_run_weekly_no_items_frontmatter_omits_title(self) -> None:
+        """No-items weekly brief uses note template; title is empty; publish false."""
         weekly, frontmatter_module = _load_weekly_module_and_frontmatter(
             tocify_overrides={"fetch_rss_items": lambda _feeds, end_date=None: []}
         )
@@ -139,7 +146,8 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
             brief_path = root / "content" / "feeds" / "weekly" / "2026 week 08.md"
             frontmatter = _read_frontmatter(frontmatter_module, brief_path)
 
-        self.assertNotIn("title", frontmatter)
+        self.assertFalse(frontmatter.get("publish"))
+        self.assertTrue(frontmatter.get("title") == "" or frontmatter.get("title") is None)
         self.assertEqual(frontmatter.get("included"), 0)
         self.assertEqual(frontmatter.get("scored"), 0)
 

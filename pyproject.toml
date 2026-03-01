@@ -34,6 +34,9 @@ tocify-test = "tocify.runner._test_cli:main"
 where = ["."]
 include = ["tocify*"]
 
+[tool.setuptools.package-data]
+tocify = ["templates/*.md", "templates/*.txt"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",

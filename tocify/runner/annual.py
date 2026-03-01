@@ -5,7 +5,8 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from tocify.frontmatter import with_frontmatter
+from tocify.frontmatter import default_note_frontmatter, split_frontmatter_and_body, with_frontmatter
+from tocify.runner.prompt_templates import load_prompt_template
 from tocify.runner.roundup_common import (
     build_allowed_url_index_from_sources,
     collect_source_metadata,
@@ -18,30 +19,6 @@ from tocify.runner.vault import (
     VAULT_ROOT,
 )
 
-ANNUAL_REVIEW_PROMPT_TEMPLATE = """You are helping an expert analyst prepare an annual review for their newsletter.
-
-**Use the Minto Pyramid Principle: structure the review to lead with the main conclusions and storylines of the year, then organize supporting information hierarchically.**
-
-We will save the review to: `{output_path}`. Return **only** the markdown body in your response (stdout). Do not create or write to any file; we will add frontmatter and write the file ourselves.
-Your response must be the **final annual review article**—ready to publish. Do not output a plan, outline, or description of what you will write.
-Do not use meta-language (e.g. "I will…", "This section will…"). Write the review itself: concrete conclusions, events, and storylines drawn only from the monthly roundups.
-Use Markdown link syntax `[title](url)` for hyperlinks. Do not use HTML anchor tags like `<a href="...">...</a>`.
-
-Generate an annual review for the year {year}. Use only the following monthly roundups as your source. Do not invent content.
-
-Monthly roundups (in chronological order):
-{roundup_refs}
-
-Format the review as follows:
-1. Title: e.g. "# {topic_upper} Annual Review — {year}" and a date range subtitle
-2. "## Introduction" — 2–4 full paragraphs with the year's main conclusions and storylines (no placeholders).
-3. "## Timelines" — Chronological narrative or month-by-month highlights with real events from the roundups.
-4. "## Trends" — Thematic arcs across the year with real content; use subheadings if helpful—not a list of "we could cover X, Y."
-5. Optional: "## Suggested Titles" — 3–5 concrete newsletter title options (real phrases, not a description).
-
-Keep content comprehensive but polished. Use only information from the attached roundups."""
-
-
 def _apply_annual_frontmatter(
     output_path: Path,
     *,
@@ -49,9 +26,11 @@ def _apply_annual_frontmatter(
     topic: str,
     source_roundups: list[Path],
 ) -> None:
-    body = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+    raw = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+    _, body = split_frontmatter_and_body(raw)
     source_meta = collect_source_metadata(source_roundups)
-    frontmatter = {
+    frontmatter = default_note_frontmatter()
+    frontmatter.update({
         "title": output_path.stem,
         "date": f"{year}-12-31",
         "date created": f"{year}-12-31 00:00:00",
@@ -65,7 +44,7 @@ def _apply_annual_frontmatter(
         "triage_model": source_meta["triage_model"],
         "triage_backends": source_meta.get("triage_backends"),
         "triage_models": source_meta.get("triage_models"),
-    }
+    })
     output_path.write_text(with_frontmatter(body, frontmatter), encoding="utf-8")
 
 
@@ -97,8 +76,11 @@ def main(
 
     no_content_fallback = f"# {topic.upper()} Annual Review — {year}\n\n*No content produced.*\n"
 
+    annual_template = load_prompt_template(
+        "annual_review_prompt.txt", paths.annual_prompt_path
+    )
     roundup_refs = "\n".join(f"@{p}" for p in roundup_paths)
-    prompt = ANNUAL_REVIEW_PROMPT_TEMPLATE.format(
+    prompt = annual_template.format(
         year=year,
         roundup_refs=roundup_refs,
         topic_upper=topic.upper(),

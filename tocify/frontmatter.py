@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib.resources
 from collections import Counter
+from pathlib import Path
 import re
 from typing import Any
 
@@ -10,11 +12,14 @@ _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n?", re.DOTALL)
 _TAG_CLEAN_RE = re.compile(r"[^a-z0-9]+")
 
 _FRONTMATTER_KEY_ORDER = [
+    "publish",
     "title",
     "date",
     "date created",
     "lastmod",
     "updated",
+    "enableToc",
+    "description",
     "tags",
     "generator",
     "period",
@@ -30,7 +35,35 @@ _FRONTMATTER_KEY_ORDER = [
     "triage_models",
     "sources",
     "links_to",
+    "permalink",
+    "aliases",
 ]
+
+
+def default_note_frontmatter(path: Path | None = None) -> dict[str, Any]:
+    """Return default frontmatter from the note template (Quartz-compatible; publish: false).
+
+    If path is provided and exists, read and parse that file's frontmatter.
+    Otherwise load the bundled tocify/templates/note_template.md. Returns a copy so callers may mutate.
+    """
+    if path is not None and path.exists():
+        raw = path.read_text(encoding="utf-8")
+        fm, _ = split_frontmatter_and_body(raw)
+        return dict(fm) if fm else _load_bundled_template()
+    return _load_bundled_template()
+
+
+def _load_bundled_template() -> dict[str, Any]:
+    """Load and parse the bundled note_template.md; return a mutable copy of its frontmatter."""
+    try:
+        ref = importlib.resources.files("tocify").joinpath("templates", "note_template.md")
+        raw = ref.read_text(encoding="utf-8")
+    except Exception:
+        # Fallback when not installed as package (e.g. dev from repo)
+        p = Path(__file__).resolve().parent / "templates" / "note_template.md"
+        raw = p.read_text(encoding="utf-8") if p.exists() else "---\npublish: false\nenableToc: true\ndescription: \"\"\ntags: []\n---"
+    fm, _ = split_frontmatter_and_body(raw)
+    return dict(fm) if fm else {"publish": False, "enableToc": True, "description": "", "tags": []}
 
 
 def _parse_scalar(raw: str) -> Any:
