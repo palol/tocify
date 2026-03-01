@@ -66,7 +66,7 @@ def run_csv2md(input_path: Path, output_path: Path) -> int:
     with open(input_path, encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames or []
-        export_columns = [c for c in fieldnames if c not in ("topic", "title")]
+        export_columns = [c for c in fieldnames if c not in ("topic", "title", "tag", "published_utc", "brief_filename")]
         if not export_columns:
             cells = []
         else:
