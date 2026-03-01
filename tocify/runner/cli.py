@@ -1,4 +1,4 @@
-"""CLI entrypoint: weekly, monthly, annual-review, list-topics, clear-topic, clean-action-json, process-whole-year, calculate-weeks, init-quartz. Backfill past years at weekly granularity via process-whole-year."""
+"""CLI entrypoint: weekly, monthly, annual-review, list-topics, clear-topic, clean-action-json, process-whole-year, calculate-weeks, csv2md, init-quartz. Backfill past years at weekly granularity via process-whole-year."""
 
 import argparse
 import datetime as dt
@@ -18,6 +18,7 @@ from tocify.runner.quartz_init import (
     DEFAULT_QUARTZ_REPO,
     init_quartz,
 )
+from tocify.runner.csv2md import run_csv2md
 
 
 def cmd_weekly(args: argparse.Namespace) -> None:
@@ -166,6 +167,14 @@ def cmd_calculate_weeks(args: argparse.Namespace) -> None:
         print(" ".join(week_ends))
 
 
+def cmd_csv2md(args: argparse.Namespace) -> None:
+    """Convert briefs_articles.csv to markdown table with frontmatter (run after weekly)."""
+    vault = getattr(args, "vault", None) or Path(".")
+    input_path = args.input if args.input is not None else vault / "content" / "briefs_articles.csv"
+    output_path = args.output if args.output is not None else vault / "content" / "briefs_articles.md"
+    sys.exit(run_csv2md(input_path, output_path))
+
+
 def cmd_init_quartz(args: argparse.Namespace) -> None:
     """Merge Quartz scaffold into target dir; optionally write .git/info/exclude rules."""
     try:
@@ -288,6 +297,27 @@ def main() -> None:
         help="Skip writing .git/info/exclude rules",
     )
     p_quartz.set_defaults(run=cmd_init_quartz)
+
+    # csv2md
+    p_csv2md = subparsers.add_parser(
+        "csv2md",
+        help="Convert briefs_articles.csv to markdown table with frontmatter (run after weekly)",
+    )
+    p_csv2md.add_argument(
+        "--input",
+        "-i",
+        type=Path,
+        default=None,
+        help="Input CSV path (default: content/briefs_articles.csv under vault or cwd)",
+    )
+    p_csv2md.add_argument(
+        "--output",
+        "-o",
+        type=Path,
+        default=None,
+        help="Output markdown path (default: content/briefs_articles.md under vault or cwd)",
+    )
+    p_csv2md.set_defaults(run=cmd_csv2md)
 
     args = parser.parse_args()
     args.run(args)
