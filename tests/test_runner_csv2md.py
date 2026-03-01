@@ -51,8 +51,10 @@ def test_run_csv2md_success(tmp_path: Path) -> None:
     assert text.strip().startswith("---")
     assert "created:" in text
     assert "modified:" in text
-    assert "| topic | title | url |" in text or "topic" in text
-    assert "Example" in text
+    # Topic column is not exported
+    assert "| topic |" not in text
+    # URL is rendered as markdown link with title as text
+    assert "[Example](https://example.com)" in text
 
 
 def test_run_csv2md_preserves_created(tmp_path: Path) -> None:
