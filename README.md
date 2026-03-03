@@ -116,10 +116,12 @@ Core keys:
 Additional metadata:
 - `generator`, `period`, `topic`
 - period keys like `week_of`, `month`, `year`
-- triage provenance: `triage_backend`, `triage_model` (and `triage_backends` / `triage_models` when mixed)
+- triage provenance: `triage_backend`, `triage_model` (and `triage_backends` / `triage_models` when mixed) — **omitted in editorial weekly briefs** (see below)
 - per-file stats where applicable (`included`, `scored`, etc.)
 
 This applies to newly generated outputs (`digest.md`, weekly briefs, monthly roundups, annual reviews, topic gardener pages). Existing files are not backfilled automatically, and runner weekly briefs intentionally do not add a `title` key.
+
+**Weekly briefs: editorial vs legacy.** By default, weekly briefs use **editorial** output: the triage block is a single reader-facing sentence (e.g. “This week we selected N items from a larger pool of M candidates.”), frontmatter does not include `triage_backend` or `triage_model`, entry blocks do not show a score line, and internal triage phrasing (e.g. “Tier-2”, “Down-weighted”) is stripped from the “why” text. Use **`--no-editorial-triage`** to get legacy output (raw “**Included:**” / “**Scored:**” block, triage keys in frontmatter, score per entry, raw “why”).
 
 ---
 
@@ -145,7 +147,7 @@ Google News link-resolution env toggles:
 
 **Commands** (use **`tocify`** when running the installed package)
 
-- **Weekly brief**: `tocify weekly --topic bci` or `tocify weekly --topic lookdeep "2025 week 2"`
+- **Weekly brief**: `tocify weekly --topic bci` or `tocify weekly --topic lookdeep "2025 week 2"` (use `--no-editorial-triage` for legacy raw-stats output)
 - **Monthly roundup**: `tocify monthly --topic bci --month 2025-01`
 - **Annual review**: `tocify annual-review --year 2025 --topic bci`
 - **List topics**: `tocify list-topics`

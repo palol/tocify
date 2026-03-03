@@ -27,6 +27,7 @@ from tocify.runner.brief_writer import (
     build_allowed_url_index_from_link_rows as _build_allowed_url_index_from_link_rows,
     build_weekly_allowed_url_index as _build_weekly_allowed_url_index,
     build_weekly_link_metadata_rows as _build_weekly_link_metadata_rows,
+    editorial_triage_sentence as _editorial_triage_sentence,
     merge_brief_frontmatter as _merge_brief_frontmatter,
     parse_brief_body_into_header_and_entries as _parse_brief_body_into_header_and_entries,
     render_brief_entry_blocks as _render_brief_entry_blocks,
@@ -1296,6 +1297,7 @@ def run_weekly(
     dry_run: int = 0,
     vault_root: Path | None = None,
     limit: int | None = None,
+    editorial_triage: bool = True,
 ) -> None:
     """Run weekly digest for one topic. Uses tocify for fetch/prefilter/triage/render params; runner adds vault, redundancy, gardener."""
     root = vault_root or VAULT_ROOT
@@ -1448,9 +1450,10 @@ def run_weekly(
             "week_of": week_of,
             "included": 0,
             "scored": 0,
-            "triage_backend": triage_metadata["triage_backend"],
-            "triage_model": triage_metadata["triage_model"],
         })
+        if not editorial_triage:
+            no_items_frontmatter["triage_backend"] = triage_metadata["triage_backend"]
+            no_items_frontmatter["triage_model"] = triage_metadata["triage_model"]
         md = with_frontmatter(no_items_body, no_items_frontmatter)
         md = ensure_trailing_weekly_nav(md, brief_filename)
         brief_path.write_text(md, encoding="utf-8")
@@ -1577,14 +1580,18 @@ def run_weekly(
         existing_scored = int(existing_frontmatter.get("scored") or 0)
         merged_included = existing_included + len(kept)
         merged_scored = existing_scored + len(ranked)
-        header = _update_brief_header_counts(header, merged_included, merged_scored)
-        new_entries_md = _render_brief_entry_blocks(kept, items_by_id)
+        if editorial_triage:
+            header = _editorial_triage_sentence(merged_included, merged_scored)
+        else:
+            header = _update_brief_header_counts(header, merged_included, merged_scored)
+        new_entries_md = _render_brief_entry_blocks(kept, items_by_id, editorial_triage=editorial_triage)
         if entry_blocks:
             merged_body = header + "\n---\n\n" + "\n---\n\n".join(entry_blocks) + "\n---\n\n" + new_entries_md
         else:
             merged_body = header + "\n---\n\n" + new_entries_md
         merged_frontmatter = _merge_brief_frontmatter(
-            existing_frontmatter, kept, merged_included, merged_scored
+            existing_frontmatter, kept, merged_included, merged_scored,
+            editorial_triage=editorial_triage,
         )
         existing_link_rows = load_brief_link_rows(paths.briefs_articles_csv, brief_filename)
         new_link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
@@ -1621,6 +1628,7 @@ def run_weekly(
     else:
         md = render_brief_md(
             result, items_by_id, kept, topic, min_score_read=MIN_SCORE_READ,
+            editorial_triage=editorial_triage,
         )
         allowed_heading_url_index = _build_weekly_allowed_url_index(kept, items_by_id)
         link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)

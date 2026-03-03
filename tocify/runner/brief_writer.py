@@ -35,6 +35,7 @@ def render_brief_md(
     *,
     min_score_read: float,
     title_override: str | None = None,
+    editorial_triage: bool = True,
 ) -> str:
     """Render triage result and kept items to weekly brief markdown with frontmatter."""
     _ = title_override  # Backward-compat parameter; weekly frontmatter no longer writes "title".
@@ -43,23 +44,27 @@ def render_brief_md(
     ranked = result.get("ranked", [])
     today = datetime.now(timezone.utc).date().isoformat()
     display_title = weekly_brief_title(topic, week_of)
-    triage_backend = str(result.get("triage_backend") or "unknown")
-    triage_model = str(result.get("triage_model") or "unknown")
 
     lines = [f"# {display_title}", ""]
     if notes:
         lines += [notes, ""]
-    lines += [
-        f"**Included:** {len(kept)} (score ≥ {min_score_read:.2f})  ",
-        f"**Scored:** {len(ranked)} total items",
-        "",
-        "---",
-        "",
-    ]
+    if editorial_triage:
+        triage_line = editorial_triage_sentence(len(kept), len(ranked) if ranked else None)
+        lines += [triage_line, "", "---", ""]
+    else:
+        triage_backend = str(result.get("triage_backend") or "unknown")
+        triage_model = str(result.get("triage_model") or "unknown")
+        lines += [
+            f"**Included:** {len(kept)} (score ≥ {min_score_read:.2f})  ",
+            f"**Scored:** {len(ranked)} total items",
+            "",
+            "---",
+            "",
+        ]
     if not kept:
         return "\n".join(lines + ["_No items met the relevance threshold this week._", ""])
 
-    lines.extend(render_brief_entry_blocks(kept, items_by_id).splitlines())
+    lines.extend(render_brief_entry_blocks(kept, items_by_id, editorial_triage=editorial_triage).splitlines())
     body = "\n".join(lines)
     frontmatter = default_note_frontmatter()
     frontmatter.update({
@@ -71,16 +76,51 @@ def render_brief_md(
         "period": "weekly",
         "topic": topic,
         "week_of": week_of,
-        "included": len(kept),
-        "scored": len(ranked),
-        "triage_backend": triage_backend,
-        "triage_model": triage_model,
     })
+    frontmatter["included"] = len(kept)
+    frontmatter["scored"] = len(ranked)
+    if not editorial_triage:
+        frontmatter["triage_backend"] = str(result.get("triage_backend") or "unknown")
+        frontmatter["triage_model"] = str(result.get("triage_model") or "unknown")
     return with_frontmatter(body, frontmatter)
 
 
 BRIEF_HEADER_INCLUDED_RE = re.compile(r"(\*\*Included:\*\*\s*)\d+")
 BRIEF_HEADER_SCORED_RE = re.compile(r"(\*\*Scored:\*\*\s*)\d+")
+
+# Internal triage phrases to strip from "why" in editorial mode
+_EDITORIAL_STRIP_PATTERNS = [
+    re.compile(r"\bTier[- ]?[123]\b", re.IGNORECASE),
+    re.compile(r"\bDown[- ]?weighted\b", re.IGNORECASE),
+    re.compile(r"\bscore\s*capped\b", re.IGNORECASE),
+    re.compile(r"\bscore\s*≥\s*[\d.]+\b", re.IGNORECASE),
+    re.compile(r"\bscore\s*>=?\s*[\d.]+\b", re.IGNORECASE),
+    re.compile(r"Summary title only[—\-].*?decision usefulness", re.IGNORECASE),
+    re.compile(r"down[- ]?weighted\s+for\b[^.]*\.?", re.IGNORECASE),
+]
+
+
+def sanitize_why_editorial(why: str) -> str:
+    """Strip internal triage phrasing from 'why' for reader-facing editorial output."""
+    if not (why or "").strip():
+        return (why or "").strip()
+    text = (why or "").strip()
+    for pat in _EDITORIAL_STRIP_PATTERNS:
+        text = pat.sub("", text)
+    # Collapse multiple spaces/semicolons and trim
+    text = re.sub(r"[;\s]+", " ", text).strip()
+    # Drop leading punctuation/space left after stripping internal phrases
+    text = re.sub(r"^[.;,\s]+", "", text).strip()
+    return text
+
+
+def editorial_triage_sentence(included: int, scored: int | None = None) -> str:
+    """One reader-facing sentence for the triage block in editorial mode."""
+    item_word = "item" if included == 1 else "items"
+    if scored is not None and scored > 0:
+        cand_word = "candidate" if scored == 1 else "candidates"
+        return f"This week we selected {included} {item_word} from a larger pool of {scored} {cand_word}."
+    return f"This week we selected {included} {item_word} from a larger pool of candidates."
 
 
 def parse_brief_body_into_header_and_entries(body: str) -> tuple[str, list[str]]:
@@ -100,7 +140,12 @@ def update_brief_header_counts(header: str, merged_included: int, merged_scored:
     return header
 
 
-def render_brief_entry_blocks(kept: list[dict], items_by_id: dict[str, dict]) -> str:
+def render_brief_entry_blocks(
+    kept: list[dict],
+    items_by_id: dict[str, dict],
+    *,
+    editorial_triage: bool = True,
+) -> str:
     """Render only weekly brief entry blocks for the kept ranked items."""
     lines: list[str] = []
     for ranked in kept:
@@ -108,13 +153,21 @@ def render_brief_entry_blocks(kept: list[dict], items_by_id: dict[str, dict]) ->
         tags = ", ".join(ranked.get("tags", [])) if ranked.get("tags") else ""
         pub = ranked.get("published_utc")
         summary = (item.get("summary") or "").strip()
+        why_text = (ranked.get("why") or "").strip()
+        if editorial_triage:
+            why_text = sanitize_why_editorial(why_text)
+        meta_parts = []
+        if not editorial_triage:
+            meta_parts.append(f"Score: **{ranked['score']:.2f}**")
+        if pub:
+            meta_parts.append(f"Published: {pub}")
         lines += [
             f"## [{ranked['title']}]({ranked['link']})",
             f"*{ranked['source']}*  ",
-            f"Score: **{ranked['score']:.2f}**" + (f"  \nPublished: {pub}" if pub else ""),
+            ("  \n".join(meta_parts) if meta_parts else ""),
             (f"Tags: {tags}" if tags else ""),
             "",
-            (ranked.get("why") or "").strip(),
+            why_text,
             "",
         ]
         if summary:
@@ -139,6 +192,8 @@ def merge_brief_frontmatter(
     new_kept: list[dict],
     merged_included: int,
     merged_scored: int,
+    *,
+    editorial_triage: bool = True,
 ) -> dict:
     """Update frontmatter when appending new entries into an existing weekly brief.
 
@@ -149,6 +204,9 @@ def merge_brief_frontmatter(
     merged["publish"] = existing_frontmatter.get("publish", default_fm.get("publish", False))
     merged["included"] = merged_included
     merged["scored"] = merged_scored
+    if editorial_triage:
+        merged.pop("triage_backend", None)
+        merged.pop("triage_model", None)
     merged["lastmod"] = datetime.now(timezone.utc).date().isoformat()
     # Preserve existing "date created" on merge (do not set or overwrite)
     existing_tags = normalize_ai_tags(_string_list(existing_frontmatter.get("tags")))

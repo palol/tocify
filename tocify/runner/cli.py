@@ -24,12 +24,14 @@ from tocify.runner.csv2md import run_csv2md
 def cmd_weekly(args: argparse.Namespace) -> None:
     """Run weekly brief for args.topic and args.week_spec (fetch, triage, redundancy, gardener, brief + CSV)."""
     vault = getattr(args, "vault", None)
+    editorial_triage = not getattr(args, "no_editorial_triage", False)
     run_weekly(
         topic=args.topic,
         week_spec=args.week_spec,
         dry_run=args.dry_run or 0,
         vault_root=vault,
         limit=getattr(args, "limit", None),
+        editorial_triage=editorial_triage,
     )
 
 
@@ -222,6 +224,11 @@ def main() -> None:
     p_weekly.add_argument("week_spec", nargs="?", type=str, default=None, help="e.g. '2025 week 2'")
     p_weekly.add_argument("--dry-run", nargs="?", const=10, type=int, metavar="N", default=0, help="Cap to N items, no CSV append")
     p_weekly.add_argument("--limit", type=int, default=None, metavar="N", help="Cap items to N before triage (full pipeline: CSV append and gardener still run)")
+    p_weekly.add_argument(
+        "--no-editorial-triage",
+        action="store_true",
+        help="Use legacy brief output (raw stats block, triage_backend/triage_model in frontmatter, score in entries)",
+    )
     p_weekly.set_defaults(run=cmd_weekly)
 
     # monthly
