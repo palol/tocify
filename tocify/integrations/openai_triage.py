@@ -43,3 +43,17 @@ def call_openai_triage(client: OpenAI, interests: dict, items: list[dict]) -> di
             last = e
             time.sleep(min(60, 2 ** attempt))
     raise last
+
+
+def call_openai_completion(client: OpenAI, prompt: str) -> str:
+    """Run a free-form prompt and return raw text. Used e.g. for changelog polish."""
+    model = os.getenv("OPENAI_MODEL", "").strip() or "gpt-4o"
+    last = None
+    for attempt in range(6):
+        try:
+            resp = client.responses.create(model=model, input=prompt)
+            return (resp.output_text or "").strip()
+        except (APITimeoutError, APIConnectionError, RateLimitError) as e:
+            last = e
+            time.sleep(min(60, 2 ** attempt))
+    raise last

@@ -15,6 +15,8 @@ from tocify.integrations._shared import (
 SUMMARY_MAX_CHARS = int(os.getenv("SUMMARY_MAX_CHARS", "500"))
 # Subprocess timeout (seconds); large batches may need more. 0 = no timeout.
 CURSOR_TIMEOUT = int(os.getenv("TOCIFY_CURSOR_TIMEOUT", "600"))
+# Timeout for completion-style calls (e.g. changelog polish). 0 = use CURSOR_TIMEOUT or 120.
+CURSOR_COMPLETION_TIMEOUT = int(os.getenv("TOCIFY_CURSOR_COMPLETION_TIMEOUT", "0"))
 CURSOR_RETRIES = max(1, int(os.getenv("TOCIFY_CURSOR_RETRIES", "2")))
 
 # Must match SCHEMA in _shared (Cursor has no structured-output API)
@@ -70,3 +72,33 @@ def call_cursor_triage(interests: dict, items: list[dict], prompt_path: str | No
             except OSError:
                 pass
     raise last
+
+
+def run_cursor_completion(prompt: str, timeout: int | None = None) -> str:
+    """Run a free-form prompt via Cursor CLI; return raw stdout. Used e.g. for changelog polish."""
+    if timeout is None:
+        timeout = CURSOR_COMPLETION_TIMEOUT if CURSOR_COMPLETION_TIMEOUT > 0 else (CURSOR_TIMEOUT if CURSOR_TIMEOUT > 0 else 120)
+    with tempfile.NamedTemporaryFile(
+        mode="w", delete=False, suffix=".txt", encoding="utf-8"
+    ) as f:
+        f.write(prompt)
+        temp_path = f.name
+    try:
+        result = subprocess.run(
+            ["agent", "-p", temp_path, "--output-format", "text", "--trust"],
+            capture_output=True,
+            text=True,
+            env=os.environ,
+            timeout=timeout,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"cursor CLI exit {result.returncode}: "
+                f"{result.stderr or result.stdout or 'no output'}"
+            )
+        return (result.stdout or "").strip()
+    finally:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass

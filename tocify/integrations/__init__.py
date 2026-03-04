@@ -2,6 +2,8 @@
 Default when TOCIFY_BACKEND is unset: cursor if CURSOR_API_KEY is set, else openai. Gemini only when explicitly set."""
 
 import os
+import shutil
+from typing import Callable
 
 
 def _openai_backend():
@@ -76,3 +78,34 @@ def get_triage_backend():
     """Return a callable (interests, items) -> dict with keys notes, ranked (and optionally week_of)."""
     triage_fn, _ = get_triage_backend_with_metadata()
     return triage_fn
+
+
+def get_run_completion() -> Callable[[str], str] | None:
+    """Return a callable (prompt: str) -> str for free-form completion (e.g. changelog polish), or None if backend unavailable.
+
+    Uses the same TOCIFY_BACKEND as triage. Unavailable when: backend is cursor but CURSOR_API_KEY unset or `agent` not on PATH;
+    backend is openai but OPENAI_API_KEY unset/invalid; backend is gemini but GEMINI_API_KEY unset or client not installable.
+    """
+    backend = _resolve_backend_name()
+    try:
+        if backend == "cursor":
+            from tocify.integrations import cursor_cli
+
+            if not cursor_cli.is_available() or not shutil.which("agent"):
+                return None
+            return cursor_cli.run_cursor_completion
+        if backend == "openai":
+            from tocify.integrations import openai_triage
+
+            client = openai_triage.make_openai_client()
+            return lambda prompt: openai_triage.call_openai_completion(client, prompt)
+        if backend == "gemini":
+            from tocify.integrations import gemini_triage
+
+            if not gemini_triage.is_available():
+                return None
+            client = gemini_triage.make_gemini_client()
+            return lambda prompt: gemini_triage.call_gemini_completion(client, prompt)
+    except (RuntimeError, ImportError):
+        return None
+    return None

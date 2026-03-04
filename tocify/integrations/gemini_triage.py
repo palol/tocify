@@ -76,3 +76,21 @@ def call_gemini_triage(client: Any, interests: dict, items: list[dict]) -> dict:
             if attempt < 5:
                 time.sleep(min(60, 2 ** attempt))
     raise last
+
+
+def call_gemini_completion(client: Any, prompt: str) -> str:
+    """Run a free-form prompt and return raw text. Used e.g. for changelog polish."""
+    model = os.getenv("GEMINI_MODEL", "").strip() or "gemini-2.0-flash"
+    last = None
+    for attempt in range(6):
+        try:
+            resp = client.models.generate_content(model=model, contents=prompt)
+            text = (getattr(resp, "text", None) or "").strip()
+            if text:
+                return text
+            raise ValueError("Empty response text from Gemini")
+        except Exception as e:
+            last = e
+            if attempt < 5:
+                time.sleep(min(60, 2 ** attempt))
+    raise last

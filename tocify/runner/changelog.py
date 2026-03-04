@@ -1,8 +1,9 @@
-"""Changelog pipeline: git-cliff (optional) + dedupe + add_dates + filter + optional Cursor polish.
+"""Changelog pipeline: git-cliff (optional) + dedupe + add_dates + filter + optional polish.
 
 Run from vault/repo root. Requires git-cliff binary (e.g. brew install git-cliff) when
-run_cliff is True. Polish step requires CURSOR_API_KEY and `agent` on PATH when skip_polish
-is False.
+run_cliff is True. Polish step uses the same backend as triage (TOCIFY_BACKEND: openai,
+gemini, or cursor). Skip when skip_polish is True or no backend is available (no API key
+or, for cursor, `agent` not on PATH).
 """
 
 from __future__ import annotations
@@ -10,9 +11,9 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-import tempfile
 from pathlib import Path
 
+from tocify.integrations import get_run_completion
 from tocify.runner.prompt_templates import load_prompt_template
 
 # Lines containing any of these (substring, case-insensitive) are dropped.
@@ -318,10 +319,11 @@ def _run_polish(
     repo_root: Path,
     prompt_path: Path | None,
 ) -> None:
-    """Run Cursor agent to polish changelog; extract body or apply fallback fixes."""
+    """Run backend (same as triage) to polish changelog; extract body or apply fallback fixes."""
     _load_dotenv(repo_root)
-    if not os.environ.get("CURSOR_API_KEY", "").strip():
-        print("changelog: skip polish (CURSOR_API_KEY not set)")
+    run_fn = get_run_completion()
+    if run_fn is None:
+        print("changelog: skip polish (no backend available; set TOCIFY_BACKEND and API key or Cursor CLI)")
         return
     config_prompt_path = repo_root / "config" / "changelog_consistency_prompt.md"
     path = prompt_path if prompt_path is not None else (
@@ -330,37 +332,16 @@ def _run_polish(
     instructions = load_prompt_template("changelog_consistency_prompt.md", path)
     content = changelog_path.read_text()
     prompt = f"{instructions}\n\n---\n\n{content}"
-    timeout = int(os.environ.get("TOCIFY_CURSOR_TIMEOUT", "0")) or 120
-    with tempfile.NamedTemporaryFile(
-        mode="w", delete=False, suffix=".txt", encoding="utf-8"
-    ) as f:
-        f.write(prompt)
-        temp_path = f.name
     try:
-        result = subprocess.run(
-            ["agent", "-p", temp_path, "--output-format", "text", "--trust"],
-            capture_output=True,
-            text=True,
-            env=os.environ,
-            timeout=timeout,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"agent exit {result.returncode}: "
-                f"{result.stderr or result.stdout or 'no output'}"
-            )
-        response_text = (result.stdout or "").strip()
+        response_text = run_fn(prompt)
     except FileNotFoundError:
         raise SystemExit(
             "changelog: 'agent' not on PATH. Install Cursor CLI, then export PATH=\"$HOME/.cursor/bin:$PATH\""
         ) from None
-    except subprocess.TimeoutExpired:
-        raise SystemExit(f"changelog: agent timed out (>{timeout}s)") from None
-    finally:
-        try:
-            os.unlink(temp_path)
-        except OSError:
-            pass
+    except subprocess.TimeoutExpired as e:
+        raise SystemExit(f"changelog: backend timed out (>{e.timeout}s)") from None
+    except RuntimeError as e:
+        raise SystemExit(f"changelog: backend error: {e}") from e
     body = _extract_body(response_text)
     if body is None:
         debug_path = repo_root / "changelog_agent_last_response.txt"
@@ -375,7 +356,7 @@ def _run_polish(
         )
     else:
         changelog_path.write_text(body + "\n")
-        print("changelog: polished with Cursor agent")
+        print("changelog: polished with backend")
 
 
 def run_changelog_pipeline(
@@ -393,7 +374,7 @@ def run_changelog_pipeline(
     - repo_root: Git repo root for git log and git-cliff cwd. Used for .env and config/ prompt override.
     - run_cliff: If True and cliff.toml exists, run git-cliff (cliff.toml must set output to changelog_path).
     - cliff_path: Path to cliff.toml (default repo_root/cliff.toml).
-    - skip_polish: If True, skip Cursor agent polish step.
+    - skip_polish: If True, skip polish step (otherwise uses TOCIFY_BACKEND as for triage).
     - prompt_path: Override path to changelog_consistency_prompt.md (default repo_root/config/).
     """
     if not changelog_path.exists() and not run_cliff:

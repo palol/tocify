@@ -171,7 +171,7 @@ def cmd_calculate_weeks(args: argparse.Namespace) -> None:
 
 
 def cmd_changelog(args: argparse.Namespace) -> None:
-    """Regenerate changelog from git (git-cliff + dedupe/dates/filter + optional Cursor polish)."""
+    """Regenerate changelog from git (git-cliff + dedupe/dates/filter + optional polish via TOCIFY_BACKEND)."""
     vault = getattr(args, "vault", None) or VAULT_ROOT
     vault = vault.resolve() if vault else Path.cwd().resolve()
     changelog_path = getattr(args, "changelog", None) or (vault / "content" / "changelog.md")
@@ -326,7 +326,7 @@ def main() -> None:
     # changelog
     p_changelog = subparsers.add_parser(
         "changelog",
-        help="Regenerate changelog (git-cliff + dedupe/dates/filter + optional Cursor polish)",
+        help="Regenerate changelog (git-cliff + dedupe/dates/filter + optional polish via TOCIFY_BACKEND)",
     )
     p_changelog.add_argument(
         "--changelog",
@@ -342,7 +342,7 @@ def main() -> None:
     p_changelog.add_argument(
         "--no-polish",
         action="store_true",
-        help="Skip Cursor agent polish step",
+        help="Skip polish step (otherwise uses TOCIFY_BACKEND as for triage)",
     )
     p_changelog.add_argument(
         "--cliff-config",
