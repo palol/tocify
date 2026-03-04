@@ -19,6 +19,7 @@ from tocify.runner.quartz_init import (
     init_quartz,
 )
 from tocify.runner.csv2md import run_csv2md
+from tocify.runner.changelog import find_repo_root, run_changelog_pipeline
 
 
 def cmd_weekly(args: argparse.Namespace) -> None:
@@ -169,6 +170,23 @@ def cmd_calculate_weeks(args: argparse.Namespace) -> None:
         print(" ".join(week_ends))
 
 
+def cmd_changelog(args: argparse.Namespace) -> None:
+    """Regenerate changelog from git (git-cliff + dedupe/dates/filter + optional Cursor polish)."""
+    vault = getattr(args, "vault", None) or VAULT_ROOT
+    vault = vault.resolve() if vault else Path.cwd().resolve()
+    changelog_path = getattr(args, "changelog", None) or (vault / "content" / "changelog.md")
+    changelog_path = changelog_path.resolve()
+    repo_root = find_repo_root(vault) or vault
+    run_changelog_pipeline(
+        changelog_path,
+        repo_root,
+        run_cliff=not getattr(args, "no_cliff", False),
+        cliff_path=getattr(args, "cliff_config", None),
+        skip_polish=getattr(args, "no_polish", False),
+        prompt_path=getattr(args, "prompt", None),
+    )
+
+
 def cmd_csv2md(args: argparse.Namespace) -> None:
     """Convert briefs_articles.csv to markdown table with frontmatter (run after weekly)."""
     vault = getattr(args, "vault", None) or Path(".")
@@ -304,6 +322,41 @@ def main() -> None:
         help="Skip writing .git/info/exclude rules",
     )
     p_quartz.set_defaults(run=cmd_init_quartz)
+
+    # changelog
+    p_changelog = subparsers.add_parser(
+        "changelog",
+        help="Regenerate changelog (git-cliff + dedupe/dates/filter + optional Cursor polish)",
+    )
+    p_changelog.add_argument(
+        "--changelog",
+        type=Path,
+        default=None,
+        help="Path to changelog file (default: vault/content/changelog.md)",
+    )
+    p_changelog.add_argument(
+        "--no-cliff",
+        action="store_true",
+        help="Skip git-cliff; only run dedupe, add_dates, filter, and optional polish",
+    )
+    p_changelog.add_argument(
+        "--no-polish",
+        action="store_true",
+        help="Skip Cursor agent polish step",
+    )
+    p_changelog.add_argument(
+        "--cliff-config",
+        type=Path,
+        default=None,
+        help="Path to cliff.toml (default: vault/cliff.toml)",
+    )
+    p_changelog.add_argument(
+        "--prompt",
+        type=Path,
+        default=None,
+        help="Path to changelog_consistency_prompt.txt (default: vault/config/)",
+    )
+    p_changelog.set_defaults(run=cmd_changelog)
 
     # csv2md
     p_csv2md = subparsers.add_parser(
