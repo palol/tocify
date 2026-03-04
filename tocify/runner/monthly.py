@@ -89,7 +89,7 @@ def main(
         log_filename.write_text("No briefs to process.", encoding="utf-8")
     else:
         roundup_template = load_prompt_template(
-            "monthly_roundup_prompt.txt", paths.monthly_prompt_path
+            "monthly_roundup_prompt.md", paths.monthly_prompt_path
         )
         brief_refs = "\n".join(f"@{p}" for p in brief_paths)
         prompt = roundup_template.format(

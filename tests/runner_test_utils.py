@@ -18,7 +18,7 @@ def write_runner_inputs(root: Path, topic: str = "bci") -> None:
         "Example | https://example.com/rss\n", encoding="utf-8"
     )
     (config_dir / f"interests.{topic}.md").write_text("keywords:\n- bci\n", encoding="utf-8")
-    (config_dir / "triage_prompt.txt").write_text(
+    (config_dir / "triage_prompt.md").write_text(
         "\n".join(["{{KEYWORDS}}", "{{NARRATIVE}}", "{{COMPANIES}}", "{{ITEMS}}"]),
         encoding="utf-8",
     )

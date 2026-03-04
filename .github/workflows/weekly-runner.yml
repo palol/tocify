@@ -44,7 +44,7 @@ jobs:
           set -euo pipefail
           feeds="config/feeds.${RUNNER_TOPIC}.txt"
           interests="config/interests.${RUNNER_TOPIC}.md"
-          prompt="config/triage_prompt.txt"
+          prompt="config/triage_prompt.md"
           if [[ -f "$feeds" && -f "$interests" && -f "$prompt" ]]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
             echo "Runner config found for topic '$RUNNER_TOPIC'."

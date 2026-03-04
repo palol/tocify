@@ -12,7 +12,7 @@ The **company list** used for prefilter and triage (see [README](../README.md#co
 
 Sync can be manual (copy company names into your interests file) or script-assisted; if scraping, respect [Neurofounders Terms of Use](https://neurofounders.co/terms-of-use) and rate-limit requests.
 
-If you use a custom triage prompt (`config/triage_prompt.txt`), add a line such as `TRACKED COMPANIES: {{COMPANIES}}` so the model is given the company list; the pipeline injects `{{COMPANIES}}` from your `## Companies` section.
+If you use a custom triage prompt (`config/triage_prompt.md`), add a line such as `TRACKED COMPANIES: {{COMPANIES}}` so the model is given the company list; the pipeline injects `{{COMPANIES}}` from your `## Companies` section.
 
 ## Company topic pages (your data asset)
 

@@ -31,7 +31,7 @@ def is_available() -> bool:
 
 
 def call_cursor_triage(interests: dict, items: list[dict], prompt_path: str | None = None) -> dict:
-    """Triage items. If prompt_path is None, uses TOCIFY_PROMPT_PATH env or 'prompt.txt'."""
+    """Triage items. If prompt_path is None, uses TOCIFY_PROMPT_PATH env or 'prompt.md'."""
     prompt, _ = build_triage_prompt(
         interests, items, summary_max_chars=SUMMARY_MAX_CHARS, prompt_path=prompt_path
     )

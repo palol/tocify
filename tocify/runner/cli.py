@@ -354,7 +354,7 @@ def main() -> None:
         "--prompt",
         type=Path,
         default=None,
-        help="Path to changelog_consistency_prompt.txt (default: vault/config/)",
+        help="Path to changelog_consistency_prompt.md (default: vault/config/)",
     )
     p_changelog.set_defaults(run=cmd_changelog)
 

@@ -16,7 +16,7 @@ It’s meant to be forked and customized.
 - **`tocify/integrations/`** — triage backends (OpenAI, Gemini, Cursor)
 - **`feeds.txt`** — RSS feed list (comments; optional `Name | URL`)
 - **`interests.md`** — keywords + narrative (used for relevance)
-- **`prompt.txt`** — prompt template (used by OpenAI, Gemini, and Cursor backends)
+- **`prompt.md`** — prompt template (used by OpenAI, Gemini, and Cursor backends)
 - **`digest.md`** — generated output (auto-updated)
 - **`.github/workflows/weekly-digest.yml`** — manual GitHub Action (with commented weekly schedule examples)
 - **`requirements.txt`** — Python dependencies
@@ -155,7 +155,7 @@ Google News link-resolution env toggles:
 - **Process whole year**: `tocify process-whole-year 2025 --topic bci`
 - **Calculate weeks**: `tocify calculate-weeks 2026-01`
 - **Initialize Quartz scaffold**: `tocify init-quartz --target . --write-local-exclude`
-- **Changelog**: `tocify --vault . changelog` (or `tocify changelog` from vault root) — regenerate `content/changelog.md` from git (requires **git-cliff**, e.g. `brew install git-cliff`). Pipeline: git-cliff → dedupe → add dates → filter; optional Cursor polish when **`CURSOR_API_KEY`** and **`agent`** on PATH are set. Use `--no-cliff` to skip git-cliff, `--no-polish` to skip the agent. Put **`cliff.toml`** at vault root and optionally **`config/changelog_consistency_prompt.txt`** to override the polish prompt. Global **`--vault`** must appear before the subcommand.
+- **Changelog**: `tocify --vault . changelog` (or `tocify changelog` from vault root) — regenerate `content/changelog.md` from git (requires **git-cliff**, e.g. `brew install git-cliff`). Pipeline: git-cliff → dedupe → add dates → filter; optional Cursor polish when **`CURSOR_API_KEY`** and **`agent`** on PATH are set. Use `--no-cliff` to skip git-cliff, `--no-polish` to skip the agent. Put **`cliff.toml`** at vault root and optionally **`config/changelog_consistency_prompt.md`** to override the polish prompt. Global **`--vault`** must appear before the subcommand.
 
 `init-quartz` merges Quartz v4 scaffold paths into the target root (including `quartz/` and `content/`) and skips existing files by default. Use `--overwrite` to replace existing files. `--write-local-exclude` writes Quartz ignore rules into `.git/info/exclude` (local-only, not committed).
 
@@ -163,10 +163,10 @@ Google News link-resolution env toggles:
 
 - `config/feeds.<topic>.txt` — RSS feeds (Name | URL)
 - `config/interests.<topic>.md` — Keywords + Narrative (+ optional **Companies**; see [Company list](docs/sources.md#company-list-neurotech-startups))
-- `config/triage_prompt.txt` — Shared triage prompt
-- `config/gardener_prompt.txt` — Topic gardener prompt (optional; defaults to bundled template)
-- `config/monthly_roundup_prompt.txt` — Monthly roundup prompt (optional)
-- `config/annual_review_prompt.txt` — Annual review prompt (optional)
+- `config/triage_prompt.md` — Shared triage prompt
+- `config/gardener_prompt.md` — Topic gardener prompt (optional; defaults to bundled template)
+- `config/monthly_roundup_prompt.md` — Monthly roundup prompt (optional)
+- `config/annual_review_prompt.md` — Annual review prompt (optional)
 - `content/briefs_articles.csv` — Chosen articles (topic column)
 - `content/feeds/weekly/` — Weekly briefs (`YYYY week N.md`)
 - `content/feeds/monthly/` — Monthly roundups (`YYYY-MM.md`)

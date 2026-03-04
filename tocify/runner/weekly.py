@@ -1214,7 +1214,7 @@ def run_topic_gardener(
     brief_meta = _extract_brief_metadata(brief_path)
     if existing_topics is None:
         existing_topics = _list_existing_topic_previews(topics_dir)
-    gardener_template = load_runner_prompt("gardener_prompt.txt", gardener_prompt_path)
+    gardener_template = load_runner_prompt("gardener_prompt.md", gardener_prompt_path)
     disable = not sys.stderr.isatty()
     with tqdm(desc="Topic gardener (agent)", total=None, unit="", disable=disable):
         actions = _call_cursor_topic_gardener(

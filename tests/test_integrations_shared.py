@@ -72,7 +72,7 @@ class ParseStructuredResponseTests(unittest.TestCase):
 class PromptTemplateTests(unittest.TestCase):
     def test_load_prompt_template_raises_on_missing_placeholders(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            prompt_path = Path(td) / "prompt.txt"
+            prompt_path = Path(td) / "prompt.md"
             prompt_path.write_text("Missing placeholders {{ITEMS}} only", encoding="utf-8")
             with self.assertRaises(RuntimeError) as ctx:
                 load_prompt_template(str(prompt_path))
@@ -84,7 +84,7 @@ class PromptTemplateTests(unittest.TestCase):
 
     def test_load_prompt_template_accepts_all_placeholders(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            prompt_path = Path(td) / "prompt.txt"
+            prompt_path = Path(td) / "prompt.md"
             prompt_path.write_text(
                 "\n".join(REQUIRED_PROMPT_PLACEHOLDERS),
                 encoding="utf-8",

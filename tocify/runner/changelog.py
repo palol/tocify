@@ -323,11 +323,11 @@ def _run_polish(
     if not os.environ.get("CURSOR_API_KEY", "").strip():
         print("changelog: skip polish (CURSOR_API_KEY not set)")
         return
-    config_prompt_path = repo_root / "config" / "changelog_consistency_prompt.txt"
+    config_prompt_path = repo_root / "config" / "changelog_consistency_prompt.md"
     path = prompt_path if prompt_path is not None else (
         config_prompt_path if config_prompt_path.is_file() else None
     )
-    instructions = load_prompt_template("changelog_consistency_prompt.txt", path)
+    instructions = load_prompt_template("changelog_consistency_prompt.md", path)
     content = changelog_path.read_text()
     prompt = f"{instructions}\n\n---\n\n{content}"
     timeout = int(os.environ.get("TOCIFY_CURSOR_TIMEOUT", "0")) or 120
@@ -394,7 +394,7 @@ def run_changelog_pipeline(
     - run_cliff: If True and cliff.toml exists, run git-cliff (cliff.toml must set output to changelog_path).
     - cliff_path: Path to cliff.toml (default repo_root/cliff.toml).
     - skip_polish: If True, skip Cursor agent polish step.
-    - prompt_path: Override path to changelog_consistency_prompt.txt (default repo_root/config/).
+    - prompt_path: Override path to changelog_consistency_prompt.md (default repo_root/config/).
     """
     if not changelog_path.exists() and not run_cliff:
         raise FileNotFoundError(f"Changelog file not found: {changelog_path}")

@@ -51,9 +51,9 @@ SCHEMA = {
 
 
 def load_prompt_template(path: str | None = None) -> str:
-    """Load triage prompt template. Uses TOCIFY_PROMPT_PATH env if set, else path or 'prompt.txt'."""
+    """Load triage prompt template. Uses TOCIFY_PROMPT_PATH env if set, else path or 'prompt.md'."""
     if path is None:
-        path = os.getenv("TOCIFY_PROMPT_PATH", "prompt.txt")
+        path = os.getenv("TOCIFY_PROMPT_PATH", "prompt.md")
     if not os.path.exists(path):
         raise RuntimeError(f"Prompt file not found: {path}")
     with open(path, encoding="utf-8") as f:

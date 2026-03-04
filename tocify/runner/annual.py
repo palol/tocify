@@ -77,7 +77,7 @@ def main(
     no_content_fallback = f"# {topic.upper()} Annual Review — {year}\n\n*No content produced.*\n"
 
     annual_template = load_prompt_template(
-        "annual_review_prompt.txt", paths.annual_prompt_path
+        "annual_review_prompt.md", paths.annual_prompt_path
     )
     roundup_refs = "\n".join(f"@{p}" for p in roundup_paths)
     prompt = annual_template.format(
