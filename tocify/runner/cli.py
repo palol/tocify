@@ -171,7 +171,7 @@ def cmd_calculate_weeks(args: argparse.Namespace) -> None:
 
 
 def cmd_changelog(args: argparse.Namespace) -> None:
-    """Regenerate changelog from git (git-cliff + dedupe/dates/filter + optional polish via TOCIFY_BACKEND)."""
+    """Regenerate changelog from git or add one tagged deploy section."""
     vault = getattr(args, "vault", None) or VAULT_ROOT
     vault = vault.resolve() if vault else Path.cwd().resolve()
     changelog_path = getattr(args, "changelog", None) or (vault / "content" / "changelog.md")
@@ -180,6 +180,11 @@ def cmd_changelog(args: argparse.Namespace) -> None:
     run_changelog_pipeline(
         changelog_path,
         repo_root,
+        mode=getattr(args, "mode", "full"),
+        release_label=getattr(args, "release_label", None),
+        from_ref=getattr(args, "from_ref", None),
+        to_ref=getattr(args, "to_ref", "HEAD"),
+        prepend=not getattr(args, "append", False),
         run_cliff=not getattr(args, "no_cliff", False),
         cliff_path=getattr(args, "cliff_config", None),
         skip_polish=getattr(args, "no_polish", False),
@@ -326,7 +331,7 @@ def main() -> None:
     # changelog
     p_changelog = subparsers.add_parser(
         "changelog",
-        help="Regenerate changelog (git-cliff + dedupe/dates/filter + optional polish via TOCIFY_BACKEND)",
+        help="Regenerate changelog or add one tagged deploy section",
     )
     p_changelog.add_argument(
         "--changelog",
@@ -335,9 +340,38 @@ def main() -> None:
         help="Path to changelog file (default: vault/content/changelog.md)",
     )
     p_changelog.add_argument(
+        "--mode",
+        choices=["full", "migrate", "deploy-section"],
+        default="full",
+        help="Legacy full rewrite, initial per-tag migration, or one ranged deploy section",
+    )
+    p_changelog.add_argument(
+        "--release-label",
+        type=str,
+        default=None,
+        help="Release tag/label for migrate and deploy-section modes",
+    )
+    p_changelog.add_argument(
+        "--from-ref",
+        type=str,
+        default=None,
+        help="Lower git ref for deploy-section mode (builds FROM_REF..TO_REF)",
+    )
+    p_changelog.add_argument(
+        "--to-ref",
+        type=str,
+        default="HEAD",
+        help="Upper git ref for deploy-section mode (default: HEAD)",
+    )
+    p_changelog.add_argument(
+        "--append",
+        action="store_true",
+        help="Append new deploy section after older tagged sections (default: prepend latest first)",
+    )
+    p_changelog.add_argument(
         "--no-cliff",
         action="store_true",
-        help="Skip git-cliff; only run dedupe, add_dates, filter, and optional polish",
+        help="Skip git-cliff; only valid for legacy full mode",
     )
     p_changelog.add_argument(
         "--no-polish",
