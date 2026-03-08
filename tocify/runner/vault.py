@@ -58,7 +58,7 @@ def get_topic_paths(topic: str, vault_root: Path | None = None) -> TopicPaths:
     config = root / "config"
     content = root / "content"
     return TopicPaths(
-        feeds_path=config / f"feeds.{topic}.txt",
+        feeds_path=config / f"feeds.{topic}.md",
         interests_path=config / f"interests.{topic}.md",
         weekly_dir=content / "feeds" / "weekly",
         monthly_dir=content / "feeds" / "monthly",
@@ -69,19 +69,19 @@ def get_topic_paths(topic: str, vault_root: Path | None = None) -> TopicPaths:
         gardener_prompt_path=config / "gardener_prompt.md",
         monthly_prompt_path=config / "monthly_roundup_prompt.md",
         annual_prompt_path=config / "annual_review_prompt.md",
-        edgar_ciks_path=config / f"edgar_ciks.{topic}.txt",
-        newsrooms_path=config / f"newsrooms.{topic}.txt",
+        edgar_ciks_path=config / f"edgar_ciks.{topic}.md",
+        newsrooms_path=config / f"newsrooms.{topic}.md",
     )
 
 
 def list_topics(vault_root: Path | None = None) -> list[str]:
-    """Discover topics from config: glob feeds.*.txt; require interests.<topic>.md to exist."""
+    """Discover topics from config: glob feeds.*.md; require interests.<topic>.md to exist."""
     root = vault_root or VAULT_ROOT
     config = root / "config"
     topics = []
     if not config.exists():
         return topics
-    for path in config.glob("feeds.*.txt"):
+    for path in config.glob("feeds.*.md"):
         stem = path.stem
         if stem.startswith("feeds."):
             topic = stem[6:].strip()

@@ -42,7 +42,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          feeds="config/feeds.${RUNNER_TOPIC}.txt"
+          feeds="config/feeds.${RUNNER_TOPIC}.md"
           interests="config/interests.${RUNNER_TOPIC}.md"
           prompt="config/triage_prompt.md"
           if [[ -f "$feeds" && -f "$interests" && -f "$prompt" ]]; then

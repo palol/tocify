@@ -10,7 +10,7 @@ from tests.runner_test_utils import load_weekly_module_for_tests, write_runner_i
 def _get_topic_paths(topic: str, vault_root: Path | None = None):
     root = Path(vault_root or ".")
     return types.SimpleNamespace(
-        feeds_path=root / "config" / f"feeds.{topic}.txt",
+        feeds_path=root / "config" / f"feeds.{topic}.md",
         interests_path=root / "config" / f"interests.{topic}.md",
         prompt_path=root / "config" / "triage_prompt.md",
         gardener_prompt_path=root / "config" / "gardener_prompt.md",
@@ -21,8 +21,8 @@ def _get_topic_paths(topic: str, vault_root: Path | None = None):
         yearly_dir=root / "content" / "feeds" / "yearly",
         logs_dir=root / "logs",
         briefs_articles_csv=root / "content" / "briefs_articles.csv",
-        edgar_ciks_path=root / "config" / f"edgar_ciks.{topic}.txt",
-        newsrooms_path=root / "config" / f"newsrooms.{topic}.txt",
+        edgar_ciks_path=root / "config" / f"edgar_ciks.{topic}.md",
+        newsrooms_path=root / "config" / f"newsrooms.{topic}.md",
     )
 
 

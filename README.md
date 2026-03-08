@@ -14,7 +14,7 @@ It’s meant to be forked and customized.
 
 - **`digest.py`** — pipeline (fetch RSS → filter → triage → render markdown)
 - **`tocify/integrations/`** — triage backends (OpenAI, Gemini, Cursor)
-- **`feeds.txt`** — RSS feed list (comments; optional `Name | URL`)
+- **`feeds.md`** — RSS feed list (comments; optional `Name | URL`)
 - **`interests.md`** — keywords + narrative (used for relevance)
 - **`prompt.md`** — prompt template (used by OpenAI, Gemini, and Cursor backends)
 - **`digest.md`** — generated output (auto-updated)
@@ -88,7 +88,7 @@ For Cursor backend, the terminal command must be available as **`agent`** on `PA
 ---
 
 ## Configure your feeds
-Edit **`feeds.txt`**.
+Edit **`feeds.md`**.
 
 You can use comments:
 
@@ -161,7 +161,7 @@ Google News link-resolution env toggles:
 
 **Vault layout**
 
-- `config/feeds.<topic>.txt` — RSS feeds (Name | URL)
+- `config/feeds.<topic>.md` — RSS feeds (Name | URL)
 - `config/interests.<topic>.md` — Keywords + Narrative (+ optional **Companies**; see [Company list](docs/sources.md#company-list-neurotech-startups))
 - `config/triage_prompt.md` — Shared triage prompt
 - `config/gardener_prompt.md` — Topic gardener prompt (optional; defaults to bundled template)
@@ -181,8 +181,8 @@ Beyond RSS and OpenAlex/NewsAPI/Google News, the weekly runner can pull from neu
 | Env / config | Purpose |
 |--------------|--------|
 | `ADD_CLINICAL_TRIALS=1` | Enable ClinicalTrials.gov (studies by date range; optional search via `CLINICALTRIALS_QUERY` or topic keywords) |
-| `ADD_EDGAR=1` | Enable SEC EDGAR company filings (by CIK). Set `EDGAR_CIKS` (comma-separated) or use `config/edgar_ciks.<topic>.txt` (one CIK per line) |
-| `ADD_NEWSROOMS=1` | Enable company newsroom scraper (experimental). Set `NEWSROOMS_URLS` (newline-separated) or use `config/newsrooms.<topic>.txt` (one index URL per line). Only links with a date in the URL path are included. |
+| `ADD_EDGAR=1` | Enable SEC EDGAR company filings (by CIK). Set `EDGAR_CIKS` (comma-separated) or use `config/edgar_ciks.<topic>.md` (one CIK per line) |
+| `ADD_NEWSROOMS=1` | Enable company newsroom scraper (experimental). Set `NEWSROOMS_URLS` (newline-separated) or use `config/newsrooms.<topic>.md` (one index URL per line). Only links with a date in the URL path are included. |
 
 **Automation notes**
 

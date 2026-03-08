@@ -402,9 +402,9 @@ def render_digest_md(result: dict, items_by_id: dict[str, dict]) -> str:
 
 
 def main():
-    """Run the single-topic pipeline: interests.md, feeds.txt -> digest.md. Respects env (backend, limits)."""
+    """Run the single-topic pipeline: interests.md, feeds.md -> digest.md. Respects env (backend, limits)."""
     interests = parse_interests_md(read_text("interests.md"))
-    feeds = load_feeds("feeds.txt")
+    feeds = load_feeds("feeds.md")
     items = fetch_rss_items(feeds)
     print(f"Fetched {len(items)} RSS items (pre-filter)")
 
