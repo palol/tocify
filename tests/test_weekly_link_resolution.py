@@ -82,6 +82,7 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
         weekly = _load_weekly_module()
         weekly.TOPIC_REDUNDANCY_ENABLED = False
         weekly.TOPIC_GARDENER_ENABLED = False
+        weekly.ENRICH_BULLETS = False
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -90,13 +91,14 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
             brief_path = root / "content" / "feeds" / "weekly" / "2026 week 08.md"
             content = brief_path.read_text(encoding="utf-8")
 
-        self.assertIn("## [Paper A](https://canonical.example.com/a)", content)
-        self.assertNotIn("## [Paper A](https://fake.example.com/a)", content)
+        self.assertIn("### [Paper A](https://canonical.example.com/a)", content)
+        self.assertNotIn("### [Paper A](https://fake.example.com/a)", content)
 
     def test_run_weekly_delinks_untrusted_heading_when_resolver_errors(self) -> None:
         weekly = _load_weekly_module()
         weekly.TOPIC_REDUNDANCY_ENABLED = False
         weekly.TOPIC_GARDENER_ENABLED = False
+        weekly.ENRICH_BULLETS = False
         original_resolver = weekly._resolve_weekly_heading_links
         weekly._resolve_weekly_heading_links = lambda *_args, **_kwargs: (_ for _ in ()).throw(
             RuntimeError("resolver boom")
@@ -111,7 +113,7 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
         finally:
             weekly._resolve_weekly_heading_links = original_resolver
 
-        self.assertIn("## [Paper A](https://canonical.example.com/a)", content)
+        self.assertIn("### [Paper A](https://canonical.example.com/a)", content)
         self.assertNotIn("https://fake.example.com/a", content)
 
     def test_run_weekly_new_brief_frontmatter_omits_title(self) -> None:
@@ -119,6 +121,7 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
         weekly, frontmatter_module = _load_weekly_module_and_frontmatter()
         weekly.TOPIC_REDUNDANCY_ENABLED = False
         weekly.TOPIC_GARDENER_ENABLED = False
+        weekly.ENRICH_BULLETS = False
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -138,6 +141,7 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
         )
         weekly.TOPIC_REDUNDANCY_ENABLED = False
         weekly.TOPIC_GARDENER_ENABLED = False
+        weekly.ENRICH_BULLETS = False
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -155,6 +159,7 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
         weekly, frontmatter_module = _load_weekly_module_and_frontmatter()
         weekly.TOPIC_REDUNDANCY_ENABLED = False
         weekly.TOPIC_GARDENER_ENABLED = False
+        weekly.ENRICH_BULLETS = False
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -166,12 +171,12 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
                 (
                     "---\n"
                     "title: \"Legacy Weekly Title\"\n"
-                    "date: \"2026-02-16\"\n"
-                    "lastmod: \"2026-02-16\"\n"
+                    "created: \"2026-02-16\"\n"
+                    "modified: \"2026-02-16\"\n"
                     "included: 0\n"
                     "scored: 0\n"
                     "---\n\n"
-                    "# BCI Weekly Brief (week of 2026-02-16)\n\n"
+                    "## BCI Weekly Brief (week of 2026-02-16)\n\n"
                     "**Included:** 0 (score ≥ 0.55)  \n"
                     "**Scored:** 0 total items\n"
                 ),
@@ -186,6 +191,7 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
         weekly, frontmatter_module = _load_weekly_module_and_frontmatter()
         weekly.TOPIC_REDUNDANCY_ENABLED = False
         weekly.TOPIC_GARDENER_ENABLED = False
+        weekly.ENRICH_BULLETS = False
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -196,12 +202,12 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
             brief_path.write_text(
                 (
                     "---\n"
-                    "date: \"2026-02-16\"\n"
-                    "lastmod: \"2026-02-16\"\n"
+                    "created: \"2026-02-16\"\n"
+                    "modified: \"2026-02-16\"\n"
                     "included: 0\n"
                     "scored: 0\n"
                     "---\n\n"
-                    "# BCI Weekly Brief (week of 2026-02-16)\n\n"
+                    "## BCI Weekly Brief (week of 2026-02-16)\n\n"
                     "**Included:** 0 (score ≥ 0.55)  \n"
                     "**Scored:** 0 total items\n"
                 ),

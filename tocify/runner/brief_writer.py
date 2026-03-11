@@ -45,7 +45,7 @@ def render_brief_md(
     today = datetime.now(timezone.utc).date().isoformat()
     display_title = weekly_brief_title(topic, week_of)
 
-    lines = [f"# {display_title}", ""]
+    lines = [f"## {display_title}", ""]
     if notes:
         lines += [notes, ""]
     if editorial_triage:
@@ -68,9 +68,8 @@ def render_brief_md(
     body = "\n".join(lines)
     frontmatter = default_note_frontmatter()
     frontmatter.update({
-        "date": week_of,
-        "date created": _weekly_date_created_utc(week_of),
-        "lastmod": today,
+        "created": week_of,
+        "modified": today,
         "tags": aggregate_ranked_item_tags(kept if kept else ranked),
         "generator": "tocify-weekly",
         "period": "weekly",
@@ -152,26 +151,28 @@ def render_brief_entry_blocks(
         item = items_by_id.get(ranked["id"], {})
         tags = ", ".join(ranked.get("tags", [])) if ranked.get("tags") else ""
         pub = ranked.get("published_utc")
-        summary = (item.get("summary") or "").strip()
         why_text = (ranked.get("why") or "").strip()
         if editorial_triage:
             why_text = sanitize_why_editorial(why_text)
-        meta_parts = []
-        if not editorial_triage:
-            meta_parts.append(f"Score: **{ranked['score']:.2f}**")
+        bullets = ranked.get("bullets")
+        if not isinstance(bullets, list):
+            bullets = []
+
+        lines += [f"### [{ranked['title']}]({ranked['link']})", ""]
+        lines += [f"*{ranked['source']}*", ""]
+        if not editorial_triage and "score" in ranked:
+            lines += [f"Score: **{ranked['score']:.2f}**", ""]
         if pub:
-            meta_parts.append(f"Published: {pub}")
-        lines += [
-            f"## [{ranked['title']}]({ranked['link']})",
-            f"*{ranked['source']}*  ",
-            ("  \n".join(meta_parts) if meta_parts else ""),
-            (f"Tags: {tags}" if tags else ""),
-            "",
-            why_text,
-            "",
-        ]
-        if summary:
-            lines += ["<details>", "<summary>RSS summary</summary>", "", summary, "", "</details>", ""]
+            lines += [f"Published: {pub}", ""]
+        if tags:
+            lines += [f"Tags: {tags}", ""]
+        lines += ["", f">[!summary] {why_text}", ""]
+        for b in bullets:
+            line = str(b).strip()
+            if line:
+                lines.append(f"- {line}" if not line.startswith("-") else line)
+        if bullets:
+            lines.append("")
         lines += ["---", ""]
     return "\n".join(lines)
 
@@ -207,8 +208,8 @@ def merge_brief_frontmatter(
     if editorial_triage:
         merged.pop("triage_backend", None)
         merged.pop("triage_model", None)
-    merged["lastmod"] = datetime.now(timezone.utc).date().isoformat()
-    # Preserve existing "date created" on merge (do not set or overwrite)
+    merged["modified"] = datetime.now(timezone.utc).date().isoformat()
+    # Preserve existing "created" on merge (do not set or overwrite)
     existing_tags = normalize_ai_tags(_string_list(existing_frontmatter.get("tags")))
     new_tags = aggregate_ranked_item_tags(new_kept) if new_kept else []
     combined = _merge_unique(existing_tags + new_tags)

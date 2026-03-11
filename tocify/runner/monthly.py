@@ -36,12 +36,9 @@ def _apply_monthly_frontmatter(
     source_meta = collect_source_metadata(source_briefs)
     frontmatter = default_note_frontmatter()
     frontmatter.update({
-        "title": output_path.stem,
-        "date": end_date.isoformat(),
-        "date created": f"{end_date.isoformat()} 00:00:00",
-        "lastmod": dt.datetime.now(dt.timezone.utc).date().isoformat(),
+        "created": end_date.isoformat(),
+        "modified": dt.datetime.now(dt.timezone.utc).date().isoformat(),
         "tags": source_meta["tags"],
-        "generator": "tocify-monthly",
         "period": "monthly",
         "topic": topic,
         "month": month_iso,
@@ -82,7 +79,7 @@ def main(
     month_iso = end_date.strftime("%Y-%m")
     roundup_filename = paths.monthly_dir / f"{month_iso}.md"
     log_filename = paths.logs_dir / f"{end_date.isoformat()}_{topic}_monthly-roundup.log.md"
-    fallback_content = f"# {topic.upper()} Monthly Roundup — {month_name}\n\n*No briefs found for this period.*\n"
+    fallback_content = f"## {topic.upper()} Monthly Memo — {month_name}\n\n*No briefs found for this period.*\n"
 
     if not brief_paths:
         roundup_filename.write_text(fallback_content, encoding="utf-8")
@@ -101,7 +98,7 @@ def main(
             output_path=str(roundup_filename.resolve()),
         )
 
-        no_content_fallback = f"# {topic.upper()} Monthly Roundup — {month_name}\n\n*No content produced.*\n"
+        no_content_fallback = f"## {topic.upper()} Monthly Memo — {month_name}\n\n*No content produced.*\n"
         try:
             run_agent_and_save_output(
                 prompt,
@@ -113,7 +110,7 @@ def main(
         except Exception as e:
             tqdm.write(f"[ERROR] Roundup generation failed: {e}")
             roundup_filename.write_text(
-                f"# {topic.upper()} Monthly Roundup — {month_name}\n\n*Generation failed: {e}*\n",
+                f"## {topic.upper()} Monthly Memo — {month_name}\n\n*Generation failed: {e}*\n",
                 encoding="utf-8",
             )
             log_filename.write_text(f"Roundup generation failed: {e}", encoding="utf-8")

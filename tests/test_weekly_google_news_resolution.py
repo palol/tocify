@@ -79,6 +79,7 @@ class WeeklyGoogleNewsResolutionTests(unittest.TestCase):
         weekly.TOPIC_REDUNDANCY_ENABLED = False
         weekly.TOPIC_GARDENER_ENABLED = False
         weekly.GOOGLE_NEWS_RESOLVE_LINKS = True
+        weekly.ENRICH_BULLETS = False
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -90,7 +91,7 @@ class WeeklyGoogleNewsResolutionTests(unittest.TestCase):
 
         self.assertNotIn("news.google.com/rss/articles", content)
         self.assertIn("https://example.com/article-1", content)
-        self.assertEqual(content.count("## ["), 1)
+        self.assertEqual(content.count("### ["), 1)
         self.assertEqual(len([line for line in csv_text.splitlines() if line.strip()]), 2)
 
 

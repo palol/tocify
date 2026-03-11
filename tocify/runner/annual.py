@@ -32,9 +32,8 @@ def _apply_annual_frontmatter(
     frontmatter = default_note_frontmatter()
     frontmatter.update({
         "title": output_path.stem,
-        "date": f"{year}-12-31",
-        "date created": f"{year}-12-31 00:00:00",
-        "lastmod": dt.datetime.now(dt.timezone.utc).date().isoformat(),
+        "created": f"{year}-12-31",
+        "modified": dt.datetime.now(dt.timezone.utc).date().isoformat(),
         "tags": source_meta["tags"],
         "generator": "tocify-annual",
         "period": "annual",
@@ -74,7 +73,7 @@ def main(
 
     print(f"[INFO] Generating annual review for {year} from {len(roundup_paths)} monthly roundups")
 
-    no_content_fallback = f"# {topic.upper()} Annual Review — {year}\n\n*No content produced.*\n"
+    no_content_fallback = f"## {year} at a glance\n\n*No content produced.*\n"
 
     annual_template = load_prompt_template(
         "annual_review_prompt.md", paths.annual_prompt_path
@@ -98,7 +97,7 @@ def main(
     except Exception as e:
         tqdm.write(f"[ERROR] Annual review generation failed: {e}")
         output_path.write_text(
-            f"# {topic.upper()} Annual Review — {year}\n\n*Generation failed: {e}*\n",
+            f"## {year} at a glance\n\n*Generation failed: {e}*\n",
             encoding="utf-8",
         )
         log_path.write_text(f"Annual review generation failed: {e}", encoding="utf-8")

@@ -17,6 +17,8 @@ _FRONTMATTER_KEY_ORDER = [
     "date",
     "date created",
     "lastmod",
+    "created",
+    "modified",
     "updated",
     "enableToc",
     "description",
@@ -38,6 +40,7 @@ _FRONTMATTER_KEY_ORDER = [
     "permalink",
     "aliases",
 ]
+_TIER_TAG_RE = re.compile(r"^tier-\d+$")
 
 
 def default_note_frontmatter(path: Path | None = None) -> dict[str, Any]:
@@ -61,9 +64,9 @@ def _load_bundled_template() -> dict[str, Any]:
     except Exception:
         # Fallback when not installed as package (e.g. dev from repo)
         p = Path(__file__).resolve().parent / "templates" / "note_template.md"
-        raw = p.read_text(encoding="utf-8") if p.exists() else "---\npublish: false\nenableToc: true\ndescription: \"\"\ntags: []\n---"
+        raw = p.read_text(encoding="utf-8") if p.exists() else "---\npublish: false\nenableToc: true\ntags: []\n---"
     fm, _ = split_frontmatter_and_body(raw)
-    return dict(fm) if fm else {"publish": False, "enableToc": True, "description": "", "tags": []}
+    return dict(fm) if fm else {"publish": False, "enableToc": True, "tags": []}
 
 
 def _parse_scalar(raw: str) -> Any:
@@ -197,8 +200,11 @@ def with_frontmatter(markdown: str, frontmatter: dict[str, Any]) -> str:
     return out
 
 
-def normalize_ai_tags(tags: list[str] | None, max_tags: int = 12) -> list[str]:
-    """Normalize and dedupe tag strings (lowercase, alphanumeric + hyphen), return up to max_tags."""
+def normalize_ai_tags(
+    tags: list[str] | None, max_tags: int = 12, *, strip_tier_tags: bool = True
+) -> list[str]:
+    """Normalize and dedupe tag strings (lowercase, alphanumeric + hyphen), return up to max_tags.
+    When strip_tier_tags is True (default), omit internal tier tags (tier-1, tier-2, etc.)."""
     if not tags:
         return []
     normalized: list[str] = []
@@ -210,6 +216,8 @@ def normalize_ai_tags(tags: list[str] | None, max_tags: int = 12) -> list[str]:
         tag = _TAG_CLEAN_RE.sub("-", tag)
         tag = re.sub(r"-{2,}", "-", tag).strip("-")
         if not tag or len(tag) > 64:
+            continue
+        if strip_tier_tags and _TIER_TAG_RE.match(tag):
             continue
         if tag in seen:
             continue

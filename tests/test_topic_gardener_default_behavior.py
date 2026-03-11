@@ -89,6 +89,7 @@ class TopicGardenerDefaultBehaviorTests(unittest.TestCase):
         weekly = _load_weekly_module()
         weekly.TOPIC_REDUNDANCY_ENABLED = False
         weekly.TOPIC_GARDENER_ENABLED = True
+        weekly.ENRICH_BULLETS = False
         weekly.run_topic_gardener = Mock()
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -100,6 +101,7 @@ class TopicGardenerDefaultBehaviorTests(unittest.TestCase):
         weekly = _load_weekly_module()
         weekly.TOPIC_REDUNDANCY_ENABLED = False
         weekly.TOPIC_GARDENER_ENABLED = True
+        weekly.ENRICH_BULLETS = False
         weekly.run_topic_gardener = Mock()
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -111,6 +113,7 @@ class TopicGardenerDefaultBehaviorTests(unittest.TestCase):
         weekly = _load_weekly_module()
         weekly.TOPIC_REDUNDANCY_ENABLED = False
         weekly.TOPIC_GARDENER_ENABLED = False
+        weekly.ENRICH_BULLETS = False
         weekly.run_topic_gardener = Mock()
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -122,6 +125,7 @@ class TopicGardenerDefaultBehaviorTests(unittest.TestCase):
         weekly = _load_weekly_module()
         weekly.TOPIC_REDUNDANCY_ENABLED = False
         weekly.TOPIC_GARDENER_ENABLED = True
+        weekly.ENRICH_BULLETS = False
         weekly.run_topic_gardener = Mock()
 
         with tempfile.TemporaryDirectory() as td:
@@ -137,6 +141,7 @@ class TopicGardenerDefaultBehaviorTests(unittest.TestCase):
         weekly = _load_weekly_module()
         weekly.TOPIC_REDUNDANCY_ENABLED = False
         weekly.TOPIC_GARDENER_ENABLED = True
+        weekly.ENRICH_BULLETS = False
         weekly.run_topic_gardener = Mock()
 
         with tempfile.TemporaryDirectory() as td:

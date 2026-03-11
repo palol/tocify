@@ -177,12 +177,11 @@ INTEGRATIONS = _load_integrations_module()
 
 class FrontmatterGenerationTests(unittest.TestCase):
     def test_default_note_frontmatter_returns_quartz_compatible_defaults(self) -> None:
-        """Default note template has publish: false and Quartz fields (enableToc, description)."""
+        """Default note template has publish: false and Quartz fields (enableToc, tags)."""
         fm = FRONTMATTER.default_note_frontmatter()
         self.assertIsInstance(fm, dict)
         self.assertFalse(fm.get("publish"), "publish should default to false")
         self.assertIn("enableToc", fm)
-        self.assertIn("description", fm)
         self.assertIn("tags", fm)
         # Override path: custom template is used when path exists
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:

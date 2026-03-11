@@ -74,6 +74,7 @@ GOOGLE_NEWS_RESOLVE_LINKS = env_bool("GOOGLE_NEWS_RESOLVE_LINKS", True)
 GOOGLE_NEWS_RESOLVE_TIMEOUT = max(1, env_int("GOOGLE_NEWS_RESOLVE_TIMEOUT", 10))
 GOOGLE_NEWS_RESOLVE_MAX_REDIRECTS = max(1, env_int("GOOGLE_NEWS_RESOLVE_MAX_REDIRECTS", 10))
 GOOGLE_NEWS_RESOLVE_WORKERS = max(1, env_int("GOOGLE_NEWS_RESOLVE_WORKERS", 8))
+ENRICH_BULLETS = env_bool("ENRICH_BULLETS", True)
 MAX_RANKED_TAGS = 8
 MAX_RANKED_TAG_CHARS = 40
 MAX_RANKED_WHY_CHARS = 320
@@ -611,6 +612,56 @@ TOPIC_GARDENER_SCHEMA = {
     "required": ["topic_actions"],
     "additionalProperties": False,
 }
+
+BULLET_ENRICHMENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "bullets": {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 0,
+            "maxItems": 16,
+        },
+    },
+    "required": ["bullets"],
+    "additionalProperties": False,
+}
+
+
+def _enrich_kept_with_bullets(
+    kept: list[dict],
+    items_by_id: dict[str, dict],
+    bullet_prompt_template: str,
+    summary_max_chars: int,
+) -> None:
+    """Add bullets to each kept ranked item via structured prompt. Mutates kept items in place."""
+    disable = not sys.stderr.isatty()
+    for ranked in tqdm(kept, desc="Bullet enrichment", unit="item", disable=disable):
+        item = items_by_id.get(ranked.get("id"), {})
+        title = str(ranked.get("title") or item.get("title") or "").strip()
+        source = str(ranked.get("source") or item.get("source") or "").strip()
+        link = str(ranked.get("link") or item.get("link") or "").strip()
+        why = str(ranked.get("why") or "").strip()
+        summary = normalize_summary(item.get("summary") or "", summary_max_chars)
+        prompt = bullet_prompt_template.format(
+            title=title,
+            source=source,
+            url=link,
+            why=why or "(none)",
+            summary=summary or "(no summary)",
+        )
+        try:
+            parsed = run_structured_prompt(
+                prompt,
+                schema=BULLET_ENRICHMENT_SCHEMA,
+                purpose="bullet-enrichment",
+                trust=True,
+            )
+            bullets = parsed.get("bullets")
+            ranked["bullets"] = [str(b).strip() for b in bullets if str(b).strip()] if isinstance(bullets, list) else []
+        except (ValueError, Exception) as e:
+            tqdm.write(f"[WARN] Bullet enrichment failed for {title[:50]!r}: {e}")
+            ranked["bullets"] = []
 
 
 def _build_allowed_source_url_index(items: list[dict]) -> dict[str, str]:
@@ -1435,14 +1486,13 @@ def run_weekly(
             return
         no_items_display_title = _weekly_brief_title(topic, week_of)
         no_items_body = (
-            f"# {no_items_display_title}\n\n"
+            f"## {no_items_display_title}\n\n"
             f"_No RSS items found in the last {LOOKBACK_DAYS} days._\n"
         )
         no_items_frontmatter = default_note_frontmatter()
         no_items_frontmatter.update({
-            "date": week_of,
-            "date created": f"{week_of} 00:00:00",
-            "lastmod": datetime.now(timezone.utc).date().isoformat(),
+            "created": week_of,
+            "modified": datetime.now(timezone.utc).date().isoformat(),
             "tags": [],
             "generator": "tocify-weekly",
             "period": "weekly",
@@ -1564,6 +1614,10 @@ def run_weekly(
         f"duplicate_id_resolved={normalization_counters['duplicate_id_resolved']}"
     )
     kept = [r for r in ranked if r["score"] >= MIN_SCORE_READ][:MAX_RETURNED]
+
+    if ENRICH_BULLETS and kept:
+        bullet_template = load_runner_prompt("bullet_enrichment_prompt.md", None)
+        _enrich_kept_with_bullets(kept, items_by_id, bullet_template, SUMMARY_MAX_CHARS)
 
     if not kept and brief_path.exists():
         print("No items met threshold this run; preserving existing brief.")

@@ -6,7 +6,7 @@ from collections import defaultdict
 from tocify.runner.link_hygiene import is_valid_http_url
 
 HEADING_LINK_RE = re.compile(
-    r"^(?P<prefix>\s*##\s+\[)(?P<title>.+?)(?P<middle>\]\()(?P<url>[^)]+)(?P<suffix>\)\s*)$",
+    r"^(?P<prefix>\s*###\s+\[)(?P<title>.+?)(?P<middle>\]\()(?P<url>[^)]+)(?P<suffix>\)\s*)$",
     re.MULTILINE,
 )
 TITLE_WHITESPACE_RE = re.compile(r"\s+")
@@ -39,7 +39,7 @@ def build_brief_title_url_index(rows: list[dict], brief_filename: str) -> dict:
 
 
 def resolve_weekly_heading_links(markdown: str, brief_filename: str, rows: list[dict]) -> tuple[str, dict]:
-    """Resolve heading links of the form `## [Title](url)` using deterministic metadata matches."""
+    """Resolve heading links of the form `### [Title](url)` using deterministic metadata matches."""
     index = build_brief_title_url_index(rows, brief_filename)
     exact_candidates: dict[str, list[str]] = index["exact_candidates"]
     normalized_candidates: dict[str, list[str]] = index["normalized_candidates"]

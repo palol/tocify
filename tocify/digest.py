@@ -385,10 +385,8 @@ def render_digest_md(result: dict, items_by_id: dict[str, dict]) -> str:
     body = "\n".join(lines)
     frontmatter = default_note_frontmatter()
     frontmatter.update({
-        "title": "digest",
-        "date": week_of,
-        "date created": f"{week_of} 00:00:00",
-        "lastmod": today,
+        "created": week_of,
+        "modified": today,
         "tags": aggregate_ranked_item_tags(kept if kept else ranked),
         "generator": "tocify-digest",
         "period": "weekly",
