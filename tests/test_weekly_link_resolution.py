@@ -155,6 +155,41 @@ class WeeklyLinkResolutionTests(unittest.TestCase):
         self.assertEqual(frontmatter.get("included"), 0)
         self.assertEqual(frontmatter.get("scored"), 0)
 
+    def test_run_weekly_editorial_frontmatter_preserves_triage_provenance(self) -> None:
+        weekly, frontmatter_module = _load_weekly_module_and_frontmatter()
+        weekly.TOPIC_REDUNDANCY_ENABLED = False
+        weekly.TOPIC_GARDENER_ENABLED = False
+        weekly.ENRICH_BULLETS = False
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write_runner_inputs(root)
+            weekly.run_weekly(topic="bci", week_spec="2026 week 8", dry_run=0, vault_root=root)
+            brief_path = root / "content" / "feeds" / "weekly" / "2026 week 08.md"
+            frontmatter = _read_frontmatter(frontmatter_module, brief_path)
+
+        self.assertEqual(frontmatter.get("triage_backend"), "openai")
+        self.assertEqual(frontmatter.get("triage_model"), "gpt-4o")
+
+    def test_load_brief_link_rows_filters_rows_by_topic(self) -> None:
+        weekly = _load_weekly_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            csv_path = root / "briefs_articles.csv"
+            csv_path.write_text(
+                (
+                    "topic,week_of,url,title,source,published_utc,score,brief_filename,why,tags\n"
+                    "bci,2026-02-16,https://example.com/bci,BCI item,Journal,2026-02-16T00:00:00+00:00,0.80,2026 week 08.md,Relevant,test\n"
+                    "other,2026-02-16,https://example.com/other,Other item,Journal,2026-02-16T00:00:00+00:00,0.80,2026 week 08.md,Relevant,test\n"
+                ),
+                encoding="utf-8",
+            )
+
+            rows = weekly.load_brief_link_rows(csv_path, "2026 week 08.md", topic="bci")
+
+        self.assertEqual(rows, [{"brief_filename": "2026 week 08.md", "title": "BCI item", "url": "https://example.com/bci"}])
+
     def test_run_weekly_merge_preserves_existing_title(self) -> None:
         weekly, frontmatter_module = _load_weekly_module_and_frontmatter()
         weekly.TOPIC_REDUNDANCY_ENABLED = False

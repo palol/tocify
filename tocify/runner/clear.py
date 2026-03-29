@@ -1,4 +1,4 @@
-"""Remove all data for a topic: feeds/logs matching *_<topic>_*, and that topic's rows from briefs_articles.csv.
+"""Remove all data for a topic: topic feed output dirs, matching logs, and that topic's rows from briefs_articles.csv.
 Also provides cleanup of stray Cursor-produced action JSON files."""
 
 import csv
@@ -88,7 +88,8 @@ def main(topic: str, vault_root: Path | None = None, confirm: bool = False) -> N
 
     if not confirm:
         print(f"⚠️  WARNING: This will delete all data for topic '{topic}'!", file=sys.stderr)
-        print(f"   - Feed outputs and logs matching *_{topic}_*", file=sys.stderr)
+        print(f"   - Feed outputs under the topic-scoped weekly/monthly/yearly dirs", file=sys.stderr)
+        print(f"   - Logs matching *_{topic}_*", file=sys.stderr)
         print(f"   - Rows for {topic} in content/briefs_articles.csv", file=sys.stderr)
         print("", file=sys.stderr)
         print('Type "yes" to confirm: ', end="", file=sys.stderr)

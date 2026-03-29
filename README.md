@@ -122,12 +122,12 @@ Core keys:
 Additional metadata:
 - `generator`, `period`, `topic`
 - period keys like `week_of`, `month`, `year`
-- triage provenance: `triage_backend`, `triage_model` (and `triage_backends` / `triage_models` when mixed) — **omitted in editorial weekly briefs** (see below)
+- triage provenance: `triage_backend`, `triage_model` (and `triage_backends` / `triage_models` when mixed)
 - per-file stats where applicable (`included`, `scored`, etc.)
 
 This applies to newly generated outputs (`digest.md`, weekly briefs, monthly roundups, annual reviews, topic gardener pages). Existing files are not backfilled automatically, and runner weekly briefs intentionally do not add a `title` key.
 
-**Weekly briefs: editorial vs legacy.** By default, weekly briefs use **editorial** output: the triage block is a single reader-facing sentence (e.g. “This week we selected N items from a larger pool of M candidates.”), frontmatter does not include `triage_backend` or `triage_model`, entry blocks do not show a score line, and internal triage phrasing (e.g. “Tier-2”, “Down-weighted”) is stripped from the “why” text. Use **`--no-editorial-triage`** to get legacy output (raw “**Included:**” / “**Scored:**” block, triage keys in frontmatter, score per entry, raw “why”).
+**Weekly briefs: editorial vs legacy.** By default, weekly briefs use **editorial** output: the triage block is a single reader-facing sentence (e.g. “This week we selected N items from a larger pool of M candidates.”), entry blocks do not show a score line, and internal triage phrasing (e.g. “Tier-2”, “Down-weighted”) is stripped from the “why” text. Frontmatter still keeps `triage_backend` and `triage_model` so gardener/monthly/annual automation can preserve provenance. Use **`--no-editorial-triage`** to get legacy output (raw “**Included:**” / “**Scored:**” block, score per entry, raw “why”).
 
 ---
 
@@ -175,9 +175,9 @@ Google News link-resolution env toggles:
 - `config/monthly_roundup_prompt.md` — Monthly roundup prompt (optional)
 - `config/annual_review_prompt.md` — Annual review prompt (optional)
 - `content/briefs_articles.csv` — Chosen articles (topic column)
-- `content/feeds/weekly/` — Weekly briefs (`YYYY week N.md`)
-- `content/feeds/monthly/` — Monthly roundups (`YYYY-MM.md`)
-- `content/feeds/yearly/` — Annual reviews (`YYYY review.md`)
+- `content/feeds/weekly/<topic>/` — Weekly briefs (`YYYY week N.md`)
+- `content/feeds/monthly/<topic>/` — Monthly roundups (`YYYY-MM.md`)
+- `content/feeds/yearly/<topic>/` — Annual reviews (`YYYY review.md`)
 - `logs/` — Logs (at vault root; e.g. topic_actions_*.json, roundup logs)
 - `content/topics/` — Optional digital garden for topic redundancy and gardener
 

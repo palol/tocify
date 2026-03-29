@@ -44,6 +44,8 @@ def render_brief_md(
     ranked = result.get("ranked", [])
     today = datetime.now(timezone.utc).date().isoformat()
     display_title = weekly_brief_title(topic, week_of)
+    triage_backend = str(result.get("triage_backend") or "unknown")
+    triage_model = str(result.get("triage_model") or "unknown")
 
     lines = [f"## {display_title}", ""]
     if notes:
@@ -52,8 +54,6 @@ def render_brief_md(
         triage_line = editorial_triage_sentence(len(kept), len(ranked) if ranked else None)
         lines += [triage_line, "", "---", ""]
     else:
-        triage_backend = str(result.get("triage_backend") or "unknown")
-        triage_model = str(result.get("triage_model") or "unknown")
         lines += [
             f"**Included:** {len(kept)} (score ≥ {min_score_read:.2f})  ",
             f"**Scored:** {len(ranked)} total items",
@@ -75,12 +75,11 @@ def render_brief_md(
         "period": "weekly",
         "topic": topic,
         "week_of": week_of,
+        "triage_backend": triage_backend,
+        "triage_model": triage_model,
     })
     frontmatter["included"] = len(kept)
     frontmatter["scored"] = len(ranked)
-    if not editorial_triage:
-        frontmatter["triage_backend"] = str(result.get("triage_backend") or "unknown")
-        frontmatter["triage_model"] = str(result.get("triage_model") or "unknown")
     return with_frontmatter(body, frontmatter)
 
 
@@ -195,6 +194,8 @@ def merge_brief_frontmatter(
     merged_scored: int,
     *,
     editorial_triage: bool = True,
+    triage_backend: str | None = None,
+    triage_model: str | None = None,
 ) -> dict:
     """Update frontmatter when appending new entries into an existing weekly brief.
 
@@ -205,9 +206,12 @@ def merge_brief_frontmatter(
     merged["publish"] = existing_frontmatter.get("publish", default_fm.get("publish", False))
     merged["included"] = merged_included
     merged["scored"] = merged_scored
-    if editorial_triage:
-        merged.pop("triage_backend", None)
-        merged.pop("triage_model", None)
+    backend = str(triage_backend or existing_frontmatter.get("triage_backend") or "").strip()
+    model = str(triage_model or existing_frontmatter.get("triage_model") or "").strip()
+    if backend:
+        merged["triage_backend"] = backend
+    if model:
+        merged["triage_model"] = model
     merged["modified"] = datetime.now(timezone.utc).date().isoformat()
     # Preserve existing "created" on merge (do not set or overwrite)
     existing_tags = normalize_ai_tags(_string_list(existing_frontmatter.get("tags")))

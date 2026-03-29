@@ -280,8 +280,8 @@ def load_briefs_articles_urls(csv_path: Path, topic: str | None = None) -> set[s
     return seen
 
 
-def load_brief_link_rows(csv_path: Path, brief_filename: str) -> list[dict]:
-    """Load rows from briefs_articles.csv for the given brief_filename (for link resolution / merge)."""
+def load_brief_link_rows(csv_path: Path, brief_filename: str, topic: str | None = None) -> list[dict]:
+    """Load rows from briefs_articles.csv for one brief filename, optionally scoped to a topic."""
     rows: list[dict] = []
     if not csv_path.exists():
         return rows
@@ -290,8 +290,11 @@ def load_brief_link_rows(csv_path: Path, brief_filename: str) -> list[dict]:
         fieldnames = reader.fieldnames or []
         if "brief_filename" not in fieldnames or "url" not in fieldnames:
             return rows
+        has_topic_col = "topic" in fieldnames
         for row in reader:
             if (row.get("brief_filename") or "").strip() != brief_filename:
+                continue
+            if topic is not None and has_topic_col and (row.get("topic") or "").strip() != topic:
                 continue
             rows.append({
                 "brief_filename": brief_filename,
@@ -1531,10 +1534,9 @@ def run_weekly(
             "week_of": week_of,
             "included": 0,
             "scored": 0,
+            "triage_backend": triage_metadata["triage_backend"],
+            "triage_model": triage_metadata["triage_model"],
         })
-        if not editorial_triage:
-            no_items_frontmatter["triage_backend"] = triage_metadata["triage_backend"]
-            no_items_frontmatter["triage_model"] = triage_metadata["triage_model"]
         md = with_frontmatter(no_items_body, no_items_frontmatter)
         md = ensure_trailing_weekly_nav(md, brief_filename)
         brief_path.write_text(md, encoding="utf-8")
@@ -1734,8 +1736,10 @@ def run_weekly(
         merged_frontmatter = _merge_brief_frontmatter(
             existing_frontmatter, kept, merged_included, merged_scored,
             editorial_triage=editorial_triage,
+            triage_backend=result.get("triage_backend"),
+            triage_model=result.get("triage_model"),
         )
-        existing_link_rows = load_brief_link_rows(paths.briefs_articles_csv, brief_filename)
+        existing_link_rows = load_brief_link_rows(paths.briefs_articles_csv, brief_filename, topic=topic)
         new_link_rows = _build_weekly_link_metadata_rows(brief_filename, kept, items_by_id)
         link_rows = existing_link_rows + new_link_rows
         allowed_heading_url_index = _build_allowed_url_index_from_link_rows(link_rows)

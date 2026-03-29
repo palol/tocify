@@ -1,4 +1,4 @@
-"""Vault layout: per-topic feeds/interests, shared content feeds/logs/csv. VAULT_ROOT from BCI_VAULT_ROOT."""
+"""Vault layout: per-topic config plus topic-scoped feed outputs under shared content/. VAULT_ROOT from BCI_VAULT_ROOT."""
 
 import datetime as dt
 import json
@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from tocify.frontmatter import split_frontmatter_and_body
 from tocify.integrations import get_triage_runtime_metadata, resolve_backend_name
 from tocify.integrations._shared import extract_first_json_object
 
@@ -18,7 +19,7 @@ VAULT_ROOT = Path(os.environ.get("BCI_VAULT_ROOT", ".")).resolve()
 
 @dataclass(frozen=True)
 class TopicPaths:
-    """Paths for a single topic (unified feeds/logs/csv dirs; per-topic feeds/interests)."""
+    """Paths for a single topic (topic-scoped feeds output dirs; shared logs/csv)."""
 
     feeds_path: Path
     interests_path: Path
@@ -54,16 +55,16 @@ class PromptRunResult:
 
 
 def get_topic_paths(topic: str, vault_root: Path | None = None) -> TopicPaths:
-    """Return paths for the given topic. Same weekly/monthly/yearly dirs, logs_dir, csv for all topics."""
+    """Return paths for the given topic."""
     root = vault_root or VAULT_ROOT
     config = root / "config"
     content = root / "content"
     return TopicPaths(
         feeds_path=config / f"feeds.{topic}.md",
         interests_path=config / f"interests.{topic}.md",
-        weekly_dir=content / "feeds" / "weekly",
-        monthly_dir=content / "feeds" / "monthly",
-        yearly_dir=content / "feeds" / "yearly",
+        weekly_dir=content / "feeds" / "weekly" / topic,
+        monthly_dir=content / "feeds" / "monthly" / topic,
+        yearly_dir=content / "feeds" / "yearly" / topic,
         logs_dir=root / "logs",
         briefs_articles_csv=content / "briefs_articles.csv",
         prompt_path=config / "triage_prompt.md",
@@ -95,30 +96,56 @@ def list_topics(vault_root: Path | None = None) -> list[str]:
 _WEEK_BRIEF_STEM_RE = re.compile(r"^(\d{4})\s+week\s+(\d+)$")
 
 
+def _legacy_feed_dir(root: Path, period: str) -> Path:
+    """Return the pre-topic layout directory for backward-compatible reads."""
+    return root / "content" / "feeds" / period
+
+
+def _topic_matches_frontmatter(path: Path, topic: str) -> bool:
+    """Return True when a markdown file frontmatter has topic=<topic>."""
+    try:
+        frontmatter, _ = split_frontmatter_and_body(path.read_text(encoding="utf-8"))
+    except OSError:
+        return False
+    return str(frontmatter.get("topic") or "").strip() == topic
+
+
 def load_briefs_for_date_range(
     start_date: dt.date, end_date: dt.date, topic: str, vault_root: Path | None = None
 ) -> list[Path]:
-    """Load weekly briefs in weekly_dir that fall within the date range. Parses stem as YYYY week N."""
+    """Load weekly briefs in the topic dir, with legacy shared-dir fallback."""
     paths = get_topic_paths(topic, vault_root)
+    root = vault_root or VAULT_ROOT
     weekly_dir = paths.weekly_dir
-    briefs: list[tuple[dt.date, Path]] = []
-    if not weekly_dir.exists():
-        return []
-    for path in weekly_dir.glob("* week *.md"):
-        try:
-            stem = path.stem
-            match = _WEEK_BRIEF_STEM_RE.match(stem.strip())
-            if not match:
-                continue
-            year, week = int(match.group(1)), int(match.group(2))
-            # Last day of ISO week (Sunday)
-            week_end = dt.date.fromisocalendar(year, week, 7)
-            if start_date <= week_end <= end_date:
-                briefs.append((week_end, path))
-        except (ValueError, TypeError):
+    legacy_weekly_dir = _legacy_feed_dir(root, "weekly")
+    briefs_by_week: dict[dt.date, tuple[int, Path]] = {}
+
+    candidate_dirs = [(0, weekly_dir, True)]
+    if legacy_weekly_dir != weekly_dir:
+        candidate_dirs.append((1, legacy_weekly_dir, False))
+
+    for priority, directory, trusted_topic_dir in candidate_dirs:
+        if not directory.exists():
             continue
-    briefs.sort(key=lambda x: x[0])
-    return [p for _, p in briefs]
+        for path in directory.glob("* week *.md"):
+            try:
+                stem = path.stem
+                match = _WEEK_BRIEF_STEM_RE.match(stem.strip())
+                if not match:
+                    continue
+                year, week = int(match.group(1)), int(match.group(2))
+                week_end = dt.date.fromisocalendar(year, week, 7)
+                if not (start_date <= week_end <= end_date):
+                    continue
+                if not trusted_topic_dir and not _topic_matches_frontmatter(path, topic):
+                    continue
+                previous = briefs_by_week.get(week_end)
+                if previous is None or priority < previous[0]:
+                    briefs_by_week[week_end] = (priority, path)
+            except (ValueError, TypeError):
+                continue
+
+    return [briefs_by_week[week_end][1] for week_end in sorted(briefs_by_week)]
 
 
 _MONTH_STEM_RE = re.compile(r"^(\d{4})-(\d{2})$")
@@ -127,27 +154,39 @@ _MONTH_STEM_RE = re.compile(r"^(\d{4})-(\d{2})$")
 def load_monthly_roundups_for_year(
     year: int, topic: str, vault_root: Path | None = None
 ) -> list[Path]:
-    """Load monthly roundups in monthly_dir for the year, sorted chronologically. Parses stem as YYYY-MM."""
+    """Load monthly roundups for the topic/year, with legacy shared-dir fallback."""
     paths = get_topic_paths(topic, vault_root)
+    root = vault_root or VAULT_ROOT
     monthly_dir = paths.monthly_dir
-    roundups: list[tuple[dt.date, Path]] = []
-    if not monthly_dir.exists():
-        return []
-    for path in monthly_dir.glob("*.md"):
-        try:
-            stem = path.stem
-            match = _MONTH_STEM_RE.match(stem)
-            if not match:
-                continue
-            y, m = int(match.group(1)), int(match.group(2))
-            if y != year:
-                continue
-            last_day = dt.date(y, 12, 31) if m == 12 else dt.date(y, m + 1, 1) - dt.timedelta(days=1)
-            roundups.append((last_day, path))
-        except (ValueError, TypeError):
+    legacy_monthly_dir = _legacy_feed_dir(root, "monthly")
+    roundups_by_month: dict[dt.date, tuple[int, Path]] = {}
+
+    candidate_dirs = [(0, monthly_dir, True)]
+    if legacy_monthly_dir != monthly_dir:
+        candidate_dirs.append((1, legacy_monthly_dir, False))
+
+    for priority, directory, trusted_topic_dir in candidate_dirs:
+        if not directory.exists():
             continue
-    roundups.sort(key=lambda x: x[0])
-    return [p for _, p in roundups]
+        for path in directory.glob("*.md"):
+            try:
+                stem = path.stem
+                match = _MONTH_STEM_RE.match(stem)
+                if not match:
+                    continue
+                y, m = int(match.group(1)), int(match.group(2))
+                if y != year:
+                    continue
+                if not trusted_topic_dir and not _topic_matches_frontmatter(path, topic):
+                    continue
+                last_day = dt.date(y, 12, 31) if m == 12 else dt.date(y, m + 1, 1) - dt.timedelta(days=1)
+                previous = roundups_by_month.get(last_day)
+                if previous is None or priority < previous[0]:
+                    roundups_by_month[last_day] = (priority, path)
+            except (ValueError, TypeError):
+                continue
+
+    return [roundups_by_month[last_day][1] for last_day in sorted(roundups_by_month)]
 
 
 def _resolve_reference_path(raw_path: str) -> Path:
