@@ -45,3 +45,9 @@ Out: massive, complicated changes. multi-modal/client support.
 
 - **Turn**: User asked to remove TOCIFY variables so the project is Cursor CLI only. Removed _cursor_cli() and TOCIFY_CURSOR_CLI; _cursor_api_key() now uses only CURSOR_API_KEY; error message updated; command is always `agent -p --output-format text --trust`.
 - **Turn**: Cursor backend now passes the prompt via stdin (not argv) so agent (cursor-cli) does not hit "Argument list too long" on Linux when batches or runner prompts are large.
+
+## 2026-03-29
+
+- **Turn**: User asked for a review of `docs/plan-issue-101-semantic-scholar.md`. Reviewed the plan against the current weekly/historical pipeline and Semantic Scholar API docs, and identified gaps around mandatory date filtering, S2-specific query normalization, and missing weekly orchestration test coverage.
+
+- **Turn**: Dual-track triage plan for neural-noise issue #102 was moved here from neural-noise: `.cursor/plans/dual-track-triage-102.plan.md`.
