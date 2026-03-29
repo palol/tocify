@@ -28,6 +28,7 @@ class TopicPaths:
     logs_dir: Path
     briefs_articles_csv: Path
     prompt_path: Path
+    news_prompt_path: Path
     gardener_prompt_path: Path
     monthly_prompt_path: Path
     annual_prompt_path: Path
@@ -66,6 +67,7 @@ def get_topic_paths(topic: str, vault_root: Path | None = None) -> TopicPaths:
         logs_dir=root / "logs",
         briefs_articles_csv=content / "briefs_articles.csv",
         prompt_path=config / "triage_prompt.md",
+        news_prompt_path=config / "triage_prompt_news.md",
         gardener_prompt_path=config / "gardener_prompt.md",
         monthly_prompt_path=config / "monthly_roundup_prompt.md",
         annual_prompt_path=config / "annual_review_prompt.md",

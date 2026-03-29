@@ -14,6 +14,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 from dotenv import load_dotenv
 
+from tocify.triage_lanes import TRIAGE_LANE_NEWS
 from tocify.utils import sha1
 
 load_dotenv()
@@ -141,6 +142,7 @@ def _fetch_newsroom_url(
             "link": link_url,
             "published_utc": published_utc,
             "summary": "",
+            "triage_lane": TRIAGE_LANE_NEWS,
         })
     return items
 

@@ -13,6 +13,7 @@ from datetime import date, datetime, time as dt_time, timezone
 import requests
 from dotenv import load_dotenv
 
+from tocify.triage_lanes import TRIAGE_LANE_NEWS
 from tocify.utils import normalize_summary, sha1
 
 load_dotenv()
@@ -135,6 +136,7 @@ def fetch_news_items(
                 "link": link,
                 "published_utc": published_utc,
                 "summary": description,
+                "triage_lane": TRIAGE_LANE_NEWS,
             })
 
         if len(articles) < params["pageSize"]:

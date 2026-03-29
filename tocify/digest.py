@@ -5,6 +5,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time as dt_time, timezone, timedelta
 from io import BytesIO
+from pathlib import Path
 
 import feedparser
 import requests
@@ -14,6 +15,17 @@ from dotenv import load_dotenv
 from tocify.config import env_bool, env_int, load_pipeline_config
 from tocify.frontmatter import aggregate_ranked_item_tags, default_note_frontmatter, with_frontmatter
 from tocify.google_news_link_resolver import resolve_google_news_links_in_items
+from tocify.triage_lanes import (
+    TRIAGE_LANE_NEWS,
+    TRIAGE_LANE_RESEARCH,
+    ensure_item_triage_lanes,
+    filter_ranked_items_by_lane_thresholds,
+    format_score_threshold_label,
+    merge_ranked_items,
+    news_prompt_enabled,
+    normalize_triage_lane,
+    split_items_by_triage_lane,
+)
 from tocify.utils import normalize_summary, sha1
 
 load_dotenv()
@@ -27,6 +39,7 @@ SUMMARY_MAX_CHARS = PIPELINE_CONFIG.summary_max_chars
 PREFILTER_KEEP_TOP = PIPELINE_CONFIG.prefilter_keep_top
 BATCH_SIZE = PIPELINE_CONFIG.batch_size
 MIN_SCORE_READ = PIPELINE_CONFIG.min_score_read
+MIN_SCORE_READ_NEWS = PIPELINE_CONFIG.min_score_read_news
 MAX_RETURNED = PIPELINE_CONFIG.max_returned
 INTERESTS_MAX_CHARS = env_int("INTERESTS_MAX_CHARS", 3000)
 RSS_FETCH_TIMEOUT = env_int("RSS_FETCH_TIMEOUT", 25)
@@ -43,9 +56,10 @@ def load_feeds(path: str) -> list[dict]:
     - blank lines
     - comments starting with #
     - optional naming via: Name | URL
+    - optional lane via: Name | URL | news|research
 
     Returns list of:
-    { "name": "...", "url": "..." }
+    { "name": "...", "url": "...", "triage_lane": "research|news" }
     """
     feeds = []
 
@@ -55,15 +69,23 @@ def load_feeds(path: str) -> list[dict]:
             if not s or s.startswith("#"):
                 continue
 
-            # Named feed: "Name | URL"
+            triage_lane = TRIAGE_LANE_RESEARCH
             if "|" in s:
-                name, url = [x.strip() for x in s.split("|", 1)]
+                parts = [x.strip() for x in s.split("|")]
+                raw_lane = parts[-1].strip().lower() if len(parts) >= 3 else ""
+                if raw_lane in (TRIAGE_LANE_RESEARCH, TRIAGE_LANE_NEWS):
+                    name = "|".join(parts[:-2]).strip() or None
+                    url = parts[-2].strip()
+                    triage_lane = normalize_triage_lane(raw_lane)
+                else:
+                    name, url = [x.strip() for x in s.split("|", 1)]
             else:
                 name, url = None, s
 
             feeds.append({
                 "name": name,
-                "url": url
+                "url": url,
+                "triage_lane": triage_lane,
             })
 
     return feeds
@@ -227,6 +249,7 @@ def _fetch_one_feed(
             "link": link,
             "published_utc": dt.isoformat() if dt else None,
             "summary": summary,
+            "triage_lane": normalize_triage_lane(feed.get("triage_lane")),
         })
     return items
 
@@ -339,13 +362,43 @@ def triage_in_batches(
     return {"week_of": week_of, "notes": " ".join(dict.fromkeys(notes_parts))[:1000], "ranked": ranked}
 
 
+def _triage_with_prompt_path(
+    interests: dict,
+    items: list[dict],
+    triage_fn,
+    prompt_path: Path,
+) -> dict:
+    """Run one triage pass with a specific prompt path."""
+    previous_prompt_path = os.environ.get("TOCIFY_PROMPT_PATH")
+    try:
+        os.environ["TOCIFY_PROMPT_PATH"] = str(prompt_path)
+        return triage_in_batches(interests, items, BATCH_SIZE, triage_fn)
+    finally:
+        if previous_prompt_path is None:
+            os.environ.pop("TOCIFY_PROMPT_PATH", None)
+        else:
+            os.environ["TOCIFY_PROMPT_PATH"] = previous_prompt_path
+
+
 # ---- render ----
 def render_digest_md(result: dict, items_by_id: dict[str, dict]) -> str:
     """Render triage result and items_by_id to markdown with YAML frontmatter."""
     week_of = result["week_of"]
     notes = result.get("notes", "").strip()
     ranked = result.get("ranked", [])
-    kept = [r for r in ranked if r["score"] >= MIN_SCORE_READ][:MAX_RETURNED]
+    dual_lane_triage = bool(result.get("dual_lane_triage"))
+    if dual_lane_triage:
+        kept = filter_ranked_items_by_lane_thresholds(
+            ranked,
+            items_by_id,
+            min_score_read=MIN_SCORE_READ,
+            min_score_read_news=MIN_SCORE_READ_NEWS,
+            max_returned=MAX_RETURNED,
+        )
+        score_label = format_score_threshold_label(MIN_SCORE_READ, MIN_SCORE_READ_NEWS)
+    else:
+        kept = [r for r in ranked if r["score"] >= MIN_SCORE_READ][:MAX_RETURNED]
+        score_label = format_score_threshold_label(MIN_SCORE_READ, MIN_SCORE_READ)
     today = datetime.now(timezone.utc).date().isoformat()
     display_title = f"Weekly ToC Digest (week of {week_of})"
     triage_backend = str(result.get("triage_backend") or "unknown")
@@ -355,7 +408,7 @@ def render_digest_md(result: dict, items_by_id: dict[str, dict]) -> str:
     if notes:
         lines += [notes, ""]
     lines += [
-        f"**Included:** {len(kept)} (score ≥ {MIN_SCORE_READ:.2f})  ",
+        f"**Included:** {len(kept)} ({score_label})  ",
         f"**Scored:** {len(ranked)} total items",
         "",
         "---",
@@ -483,19 +536,63 @@ def main():
         print("No items; wrote digest.md")
         return
 
-    items = keyword_prefilter(
-        items,
-        interests["keywords"],
-        keep_top=PREFILTER_KEEP_TOP,
-        companies=interests.get("companies", []),
-    )
+    items = ensure_item_triage_lanes(items)
+    news_prompt_path = Path("triage_prompt_news.md")
+    use_dual_lane = news_prompt_enabled(news_prompt_path, items)
+
+    if use_dual_lane:
+        research_items, news_items = split_items_by_triage_lane(items)
+        print(f"Lane split (pre-filter): research={len(research_items)}, news={len(news_items)}")
+        research_items = keyword_prefilter(
+            research_items,
+            interests["keywords"],
+            keep_top=PREFILTER_KEEP_TOP,
+            companies=interests.get("companies", []),
+        )
+        news_items = keyword_prefilter(
+            news_items,
+            interests["keywords"],
+            keep_top=PREFILTER_KEEP_TOP,
+            companies=interests.get("companies", []),
+        )
+        items = research_items + news_items
+        print(f"Lane split (post-filter): research={len(research_items)}, news={len(news_items)}")
+    else:
+        if Path("triage_prompt_news.md").exists():
+            print("News lane prompt found, but there are no news-lane items; using standard triage.")
+        elif any(it.get("triage_lane") == TRIAGE_LANE_NEWS for it in items):
+            print("News lane items found, but triage_prompt_news.md is missing; using standard triage.")
+        items = keyword_prefilter(
+            items,
+            interests["keywords"],
+            keep_top=PREFILTER_KEEP_TOP,
+            companies=interests.get("companies", []),
+        )
+
     print(f"Sending {len(items)} RSS items to model (post-filter)")
 
     items_by_id = {it["id"]: it for it in items}
 
     from tocify.integrations import get_triage_backend_with_metadata
+
     triage_fn, triage_metadata = get_triage_backend_with_metadata()
-    result = triage_in_batches(interests, items, BATCH_SIZE, triage_fn)
+    if use_dual_lane:
+        lane_results = []
+        if research_items:
+            lane_results.append(_triage_with_prompt_path(interests, research_items, triage_fn, Path("prompt.md")))
+        if news_items:
+            lane_results.append(_triage_with_prompt_path(interests, news_items, triage_fn, news_prompt_path))
+        notes = [res.get("notes", "").strip() for res in lane_results if res.get("notes", "").strip()]
+        week_of = lane_results[0]["week_of"] if lane_results else datetime.now(timezone.utc).date().isoformat()
+        result = {
+            "week_of": week_of,
+            "notes": " ".join(dict.fromkeys(notes))[:1000],
+            "ranked": merge_ranked_items(*(res.get("ranked", []) for res in lane_results)),
+            "dual_lane_triage": True,
+        }
+    else:
+        result = _triage_with_prompt_path(interests, items, triage_fn, Path("prompt.md"))
+        result["dual_lane_triage"] = False
     result["triage_backend"] = triage_metadata["triage_backend"]
     result["triage_model"] = triage_metadata["triage_model"]
     md = render_digest_md(result, items_by_id)

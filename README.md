@@ -17,6 +17,7 @@ It’s meant to be forked and customized.
 - **`feeds.md`** — RSS feed list (comments; optional `Name | URL`)
 - **`interests.md`** — keywords + narrative (used for relevance)
 - **`prompt.md`** — prompt template (used by OpenAI, Gemini, and Cursor backends)
+- **`triage_prompt_news.md`** — optional news-lane prompt for separate news scoring
 - **`digest.md`** — generated output (auto-updated)
 - **`.github/workflows/weekly-digest.yml`** — manual GitHub Action (with commented weekly schedule examples)
 - **`requirements.txt`** — Python dependencies
@@ -99,7 +100,12 @@ PLOS Biology | https://journals.plos.org/plosbiology/rss
 
 # Preprints
 bioRxiv neuroscience | https://www.biorxiv.org/rss/subject/neuroscience.xml
+
+# Optional news lane
+STAT News | https://www.statnews.com/feed/ | news
 ```
+
+To opt into separate news scoring, add `triage_prompt_news.md` next to `prompt.md`. When that file exists and at least one item lands in the `news` lane, tocify runs separate research and news triage passes, then merges the ranked output. Set `MIN_SCORE_READ_NEWS` to override the news inclusion threshold; if unset, it defaults to `MIN_SCORE_READ`.
 
 ---
 
@@ -161,9 +167,10 @@ Google News link-resolution env toggles:
 
 **Vault layout**
 
-- `config/feeds.<topic>.md` — RSS feeds (Name | URL)
+- `config/feeds.<topic>.md` — RSS feeds (`Name | URL` or `Name | URL | news|research`)
 - `config/interests.<topic>.md` — Keywords + Narrative (+ optional **Companies**; see [Company list](docs/sources.md#company-list-neurotech-startups))
 - `config/triage_prompt.md` — Shared triage prompt
+- `config/triage_prompt_news.md` — Optional news-lane triage prompt
 - `config/gardener_prompt.md` — Topic gardener prompt (optional; defaults to bundled template)
 - `config/monthly_roundup_prompt.md` — Monthly roundup prompt (optional)
 - `config/annual_review_prompt.md` — Annual review prompt (optional)

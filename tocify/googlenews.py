@@ -16,6 +16,7 @@ from dateutil import parser as dtparser
 from dotenv import load_dotenv
 from tqdm import tqdm
 
+from tocify.triage_lanes import TRIAGE_LANE_NEWS
 from tocify.utils import normalize_summary, sha1
 
 load_dotenv()
@@ -118,6 +119,7 @@ def fetch_google_news_items(
                 "link": link,
                 "published_utc": dt.isoformat() if dt else None,
                 "summary": summary,
+                "triage_lane": TRIAGE_LANE_NEWS,
             })
 
     all_items.sort(key=lambda x: x.get("published_utc") or "", reverse=True)

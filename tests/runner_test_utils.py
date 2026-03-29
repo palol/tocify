@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 
-def write_runner_inputs(root: Path, topic: str = "bci") -> None:
+def write_runner_inputs(root: Path, topic: str = "bci", *, news_prompt: bool = False) -> None:
     config_dir = root / "config"
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / f"feeds.{topic}.md").write_text(
@@ -22,6 +22,11 @@ def write_runner_inputs(root: Path, topic: str = "bci") -> None:
         "\n".join(["{{KEYWORDS}}", "{{NARRATIVE}}", "{{COMPANIES}}", "{{ITEMS}}"]),
         encoding="utf-8",
     )
+    if news_prompt:
+        (config_dir / "triage_prompt_news.md").write_text(
+            "\n".join(["{{KEYWORDS}}", "{{NARRATIVE}}", "{{COMPANIES}}", "{{ITEMS}}"]),
+            encoding="utf-8",
+        )
 
 
 def load_weekly_module_for_tests(

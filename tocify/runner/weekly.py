@@ -23,6 +23,14 @@ from tocify.frontmatter import (
     with_frontmatter,
 )
 from tocify.google_news_link_resolver import resolve_google_news_links_in_items
+from tocify.triage_lanes import (
+    ensure_item_triage_lanes,
+    filter_ranked_items_by_lane_thresholds,
+    has_news_lane,
+    merge_ranked_items,
+    news_prompt_enabled,
+    split_items_by_triage_lane,
+)
 from tocify.runner.brief_writer import (
     build_allowed_url_index_from_link_rows as _build_allowed_url_index_from_link_rows,
     build_weekly_allowed_url_index as _build_weekly_allowed_url_index,
@@ -61,6 +69,7 @@ SUMMARY_MAX_CHARS = PIPELINE_CONFIG.summary_max_chars
 PREFILTER_KEEP_TOP = PIPELINE_CONFIG.prefilter_keep_top
 BATCH_SIZE = PIPELINE_CONFIG.batch_size
 MIN_SCORE_READ = PIPELINE_CONFIG.min_score_read
+MIN_SCORE_READ_NEWS = PIPELINE_CONFIG.min_score_read_news
 MAX_RETURNED = PIPELINE_CONFIG.max_returned
 USE_NEWSPAPER = env_bool("USE_NEWSPAPER", False)
 NEWSPAPER_MAX_ITEMS = env_int("NEWSPAPER_MAX_ITEMS", 100)
@@ -205,6 +214,24 @@ def normalize_ranked_items(ranked: list[dict], items_by_id: dict[str, dict]) -> 
             deduped_by_id[row_id] = normalized
 
     return list(deduped_by_id.values()), counters
+
+
+def _triage_with_prompt_path(
+    interests: dict,
+    items: list[dict],
+    triage_fn,
+    prompt_path: Path,
+) -> dict:
+    """Run one triage pass with a specific prompt path."""
+    previous_prompt_path = os.environ.get("TOCIFY_PROMPT_PATH")
+    try:
+        os.environ["TOCIFY_PROMPT_PATH"] = str(prompt_path)
+        return tocify.triage_in_batches(interests, items, BATCH_SIZE, triage_fn)
+    finally:
+        if previous_prompt_path is None:
+            os.environ.pop("TOCIFY_PROMPT_PATH", None)
+        else:
+            os.environ["TOCIFY_PROMPT_PATH"] = previous_prompt_path
 
 
 def parse_week_spec(s: str) -> str:
@@ -1514,12 +1541,37 @@ def run_weekly(
         print(f"No items; wrote {brief_path}")
         return
 
-    items = tocify.keyword_prefilter(
-        items,
-        interests["keywords"],
-        keep_top=PREFILTER_KEEP_TOP,
-        companies=interests.get("companies", []),
-    )
+    items = ensure_item_triage_lanes(items)
+    news_prompt_path = getattr(paths, "news_prompt_path", paths.prompt_path.with_name("triage_prompt_news.md"))
+    use_dual_lane = news_prompt_enabled(news_prompt_path, items)
+    if use_dual_lane:
+        research_items, news_items = split_items_by_triage_lane(items)
+        print(f"Lane split (pre-filter): research={len(research_items)}, news={len(news_items)}")
+        research_items = tocify.keyword_prefilter(
+            research_items,
+            interests["keywords"],
+            keep_top=PREFILTER_KEEP_TOP,
+            companies=interests.get("companies", []),
+        )
+        news_items = tocify.keyword_prefilter(
+            news_items,
+            interests["keywords"],
+            keep_top=PREFILTER_KEEP_TOP,
+            companies=interests.get("companies", []),
+        )
+        items = research_items + news_items
+        print(f"Lane split (post-prefilter): research={len(research_items)}, news={len(news_items)}")
+    else:
+        if news_prompt_path.exists():
+            print("News lane prompt found, but there are no news-lane items; using standard triage.")
+        elif has_news_lane(items):
+            print(f"News lane items found, but prompt is missing ({news_prompt_path}); using standard triage.")
+        items = tocify.keyword_prefilter(
+            items,
+            interests["keywords"],
+            keep_top=PREFILTER_KEEP_TOP,
+            companies=interests.get("companies", []),
+        )
     seen_norm = {}
     deduped = []
     for it in items:
@@ -1576,7 +1628,16 @@ def run_weekly(
         print("No items to triage for this week; preserving existing brief.")
         return
 
-    tqdm.write(f"Sending {len(items)} RSS items to model (post-filter)")
+    if use_dual_lane:
+        triage_research_items, triage_news_items = split_items_by_triage_lane(items)
+        tqdm.write(
+            f"Sending {len(items)} RSS items to model (post-filter; "
+            f"research={len(triage_research_items)}, news={len(triage_news_items)})"
+        )
+    else:
+        triage_research_items = items
+        triage_news_items = []
+        tqdm.write(f"Sending {len(items)} RSS items to model (post-filter)")
 
     if USE_NEWSPAPER:
         to_enrich = items[: max(0, int(NEWSPAPER_MAX_ITEMS))]
@@ -1598,9 +1659,23 @@ def run_weekly(
 
     items_by_id = {it["id"]: it for it in items}
 
-    os.environ["TOCIFY_PROMPT_PATH"] = str(paths.prompt_path)
     triage_fn, triage_metadata = tocify.get_triage_backend_with_metadata()
-    result = tocify.triage_in_batches(interests, items, BATCH_SIZE, triage_fn)
+    if use_dual_lane:
+        lane_results = []
+        if triage_research_items:
+            lane_results.append(_triage_with_prompt_path(interests, triage_research_items, triage_fn, paths.prompt_path))
+        if triage_news_items:
+            lane_results.append(_triage_with_prompt_path(interests, triage_news_items, triage_fn, news_prompt_path))
+        notes = [res.get("notes", "").strip() for res in lane_results if res.get("notes", "").strip()]
+        result = {
+            "week_of": week_of,
+            "notes": " ".join(dict.fromkeys(notes))[:1000],
+            "ranked": merge_ranked_items(*(res.get("ranked", []) for res in lane_results)),
+            "dual_lane_triage": True,
+        }
+    else:
+        result = _triage_with_prompt_path(interests, items, triage_fn, paths.prompt_path)
+        result["dual_lane_triage"] = False
     result["week_of"] = week_of
     result["triage_backend"] = triage_metadata["triage_backend"]
     result["triage_model"] = triage_metadata["triage_model"]
@@ -1617,7 +1692,16 @@ def run_weekly(
         f"tags_trimmed={normalization_counters['tags_trimmed']}, "
         f"duplicate_id_resolved={normalization_counters['duplicate_id_resolved']}"
     )
-    kept = [r for r in ranked if r["score"] >= MIN_SCORE_READ][:MAX_RETURNED]
+    if use_dual_lane:
+        kept = filter_ranked_items_by_lane_thresholds(
+            ranked,
+            items_by_id,
+            min_score_read=MIN_SCORE_READ,
+            min_score_read_news=MIN_SCORE_READ_NEWS,
+            max_returned=MAX_RETURNED,
+        )
+    else:
+        kept = [r for r in ranked if r["score"] >= MIN_SCORE_READ][:MAX_RETURNED]
 
     if ENRICH_BULLETS and kept:
         bullet_template = load_runner_prompt("bullet_enrichment_prompt.md", None)

@@ -51,11 +51,13 @@ class PipelineConfig:
     prefilter_keep_top: int
     batch_size: int
     min_score_read: float
+    min_score_read_news: float
     max_returned: int
 
 
 def load_pipeline_config(environ: Mapping[str, str] | None = None) -> PipelineConfig:
     """Load shared pipeline configuration from environment."""
+    min_score_read = env_float("MIN_SCORE_READ", 0.65, environ)
     return PipelineConfig(
         max_items_per_feed=env_int("MAX_ITEMS_PER_FEED", 50, environ),
         max_total_items=env_int("MAX_TOTAL_ITEMS", 400, environ),
@@ -63,6 +65,7 @@ def load_pipeline_config(environ: Mapping[str, str] | None = None) -> PipelineCo
         summary_max_chars=env_int("SUMMARY_MAX_CHARS", 500, environ),
         prefilter_keep_top=env_int("PREFILTER_KEEP_TOP", 200, environ),
         batch_size=env_int("BATCH_SIZE", 50, environ),
-        min_score_read=env_float("MIN_SCORE_READ", 0.65, environ),
+        min_score_read=min_score_read,
+        min_score_read_news=env_float("MIN_SCORE_READ_NEWS", min_score_read, environ),
         max_returned=env_int("MAX_RETURNED", 40, environ),
     )
