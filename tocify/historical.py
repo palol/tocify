@@ -123,6 +123,7 @@ def fetch_historical_items(
     backends: list[str] | None = None,
     *,
     openalex_search: str | None = None,
+    semanticscholar_query: str | None = None,
     news_query: str | None = None,
     googlenews_queries: list[str] | None = None,
     clinicaltrials_query: str | None = None,
@@ -134,8 +135,10 @@ def fetch_historical_items(
     Returns list of dicts with keys: id, source, title, link, published_utc, summary
     (same schema as RSS for merge/triage).
 
-    backends: list of "openalex", "newsapi", "googlenews", "clinicaltrials", "edgar", "newsrooms".
+    backends: list of "openalex", "semanticscholar", "newsapi", "googlenews", "clinicaltrials", "edgar", "newsrooms".
     If None, uses env HISTORICAL_BACKENDS (comma-separated) or ["openalex"].
+    semanticscholar_query: explicit search term for Semantic Scholar. If None when semanticscholar is in backends,
+    falls back to openalex_search for backward-compatible call sites.
     googlenews_queries: list of search terms for Google News RSS (one request per query). If empty when googlenews is in backends, skip.
     clinicaltrials_query: optional search term for ClinicalTrials.gov. If None when clinicaltrials in backends, uses env CLINICALTRIALS_QUERY.
     edgar_ciks: optional list of SEC CIKs for company filings. If None when edgar in backends, uses env EDGAR_CIKS or per-topic file.
@@ -152,6 +155,16 @@ def fetch_historical_items(
         try:
             if name == "openalex":
                 batch = _fetch_openalex(start_date, end_date, search=openalex_search)
+                for it in batch:
+                    iid = it.get("id")
+                    if iid and iid not in seen_ids:
+                        seen_ids.add(iid)
+                        all_items.append(it)
+            elif name == "semanticscholar":
+                from tocify.semanticscholar import fetch_semantic_scholar_items
+
+                q = semanticscholar_query if semanticscholar_query is not None else openalex_search
+                batch = fetch_semantic_scholar_items(start_date, end_date, query=q)
                 for it in batch:
                     iid = it.get("id")
                     if iid and iid not in seen_ids:

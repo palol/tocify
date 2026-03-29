@@ -174,12 +174,13 @@ Google News link-resolution env toggles:
 - `logs/` — Logs (at vault root; e.g. topic_actions_*.json, roundup logs)
 - `content/topics/` — Optional digital garden for topic redundancy and gardener
 
-**Industry backends** (weekly run)
+**Additional backends** (weekly run)
 
-Beyond RSS and OpenAlex/NewsAPI/Google News, the weekly runner can pull from neurotech/industry sources. Each backend returns the same item schema and is merged with RSS before triage. Enable via env and optional per-topic config:
+Beyond RSS and OpenAlex/NewsAPI/Google News, the weekly runner can pull from Semantic Scholar plus neurotech/industry sources. Each backend returns the same item schema and is merged with RSS before triage. Enable via env and optional per-topic config:
 
 | Env / config | Purpose |
 |--------------|--------|
+| `WEEKLY_SEMANTIC_SCHOLAR=1` | Enable Semantic Scholar paper search for the weekly date window. Optional auth via `SEMANTIC_SCHOLAR_API_KEY` or `S2_API_KEY`; tune with `SEMANTIC_SCHOLAR_TIMEOUT`, `SEMANTIC_SCHOLAR_PAGE_SIZE`, and `SEMANTIC_SCHOLAR_MAX_ITEMS`. |
 | `ADD_CLINICAL_TRIALS=1` | Enable ClinicalTrials.gov (studies by date range; optional search via `CLINICALTRIALS_QUERY` or topic keywords) |
 | `ADD_EDGAR=1` | Enable SEC EDGAR company filings (by CIK). Set `EDGAR_CIKS` (comma-separated) or use `config/edgar_ciks.<topic>.md` (one CIK per line) |
 | `ADD_NEWSROOMS=1` | Enable company newsroom scraper (experimental). Set `NEWSROOMS_URLS` (newline-separated) or use `config/newsrooms.<topic>.md` (one index URL per line). Only links with a date in the URL path are included. |

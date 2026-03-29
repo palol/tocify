@@ -1380,8 +1380,9 @@ def run_weekly(
     items = tocify.fetch_rss_items(feeds, end_date=week_end if week_spec is not None else None)
     print(f"Fetched {len(items)} RSS items (pre-filter) [topic={topic}]")
 
-    # OpenAlex and/or NewsAPI and/or Google News and/or ClinicalTrials/EDGAR/newsrooms for this week's date range
+    # OpenAlex and/or Semantic Scholar and/or NewsAPI and/or Google News and/or ClinicalTrials/EDGAR/newsrooms
     weekly_openalex = env_bool("WEEKLY_OPENALEX", True)
+    weekly_semantic_scholar = env_bool("WEEKLY_SEMANTIC_SCHOLAR", False)
     news_backend = (os.getenv("NEWS_BACKEND") or "").strip().lower()
     add_google_news = env_bool("ADD_GOOGLE_NEWS", False)
     add_clinical_trials = env_bool("ADD_CLINICAL_TRIALS", False)
@@ -1390,6 +1391,8 @@ def run_weekly(
     backends = []
     if weekly_openalex and (topic_search or "").strip():
         backends.append("openalex")
+    if weekly_semantic_scholar and (topic_search or "").strip():
+        backends.append("semanticscholar")
     if news_backend == "newsapi":
         backends.append("newsapi")
     if add_google_news or news_backend == "googlenews":
@@ -1427,6 +1430,7 @@ def run_weekly(
                 week_end,
                 backends=backends,
                 openalex_search=topic_search or None,
+                semanticscholar_query=topic_search or None,
                 news_query=topic_search or None,
                 googlenews_queries=googlenews_queries,
                 clinicaltrials_query=clinicaltrials_query,

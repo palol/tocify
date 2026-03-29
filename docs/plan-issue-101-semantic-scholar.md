@@ -13,7 +13,7 @@ RSS + OpenAlex can **miss thesis / institutional** and other S2-heavy coverage. 
 
 Example:
 
-`GET https://api.semanticscholar.org/graph/v1/paper/search?query=...&fields=title,year,authors,externalIds&publicationDateOrYear=2026`
+`GET https://api.semanticscholar.org/graph/v1/paper/search?query=...&fields=title,year,authors,externalIds&publicationDateOrYear=2026-01-01:2026-01-07`
 
 ## Code map (verified on `runner-module`)
 
@@ -36,10 +36,12 @@ flowchart LR
 
 ## Checklist
 
-- [ ] Add `tocify/semanticscholar.py` with `fetch_semantic_scholar_items()` (S2 JSON → standard item dicts; query, date window, pagination, optional `x-api-key`).
-- [ ] Extend `tocify/historical.py` `fetch_historical_items()` with backend `semanticscholar` and env limits (`SEMANTIC_SCHOLAR_*`).
-- [ ] In `tocify/runner/weekly.py` (~1383–1435): `WEEKLY_SEMANTIC_SCHOLAR` gate; pass `week_start` / `week_end` + `topic_search` into `fetch_historical_items`.
-- [ ] Add `tests/test_semanticscholar.py` (mirror `tests/test_googlenews.py`: mocked requests, schema + date window).
+- [ ] Add `tocify/semanticscholar.py` with `fetch_semantic_scholar_items()` (S2 JSON -> standard item dicts; normalized query, date window, pagination, optional `x-api-key`).
+- [ ] Extend `tocify/historical.py` `fetch_historical_items()` with backend `semanticscholar` and an explicit `semanticscholar_query` kwarg plus env limits (`SEMANTIC_SCHOLAR_*`).
+- [ ] In `tocify/runner/weekly.py` (~1383–1435): `WEEKLY_SEMANTIC_SCHOLAR` gate; pass `week_start` / `week_end` + explicit Semantic Scholar query into `fetch_historical_items`.
+- [ ] Add `tests/test_semanticscholar.py` (mirror `tests/test_googlenews.py`: mocked requests, schema + mandatory backend-side date window filtering).
+- [ ] Add a runner-level weekly wiring test proving `WEEKLY_SEMANTIC_SCHOLAR` appends the backend and forwards query/date args to `fetch_historical_items()`.
+- [ ] Document `WEEKLY_SEMANTIC_SCHOLAR` and `SEMANTIC_SCHOLAR_*` in `README.md`.
 - [ ] Bump tocify `pyproject.toml` version for release / pin.
 - [ ] **Downstream (neural-noise):** bump tocify git ref, optional `content/readme.md` colophon, optional `weekly_brief.yml` env + API secret.
 
@@ -48,25 +50,27 @@ flowchart LR
 ### 1. `tocify/semanticscholar.py`
 
 - `fetch_semantic_scholar_items(start_date, end_date, *, query: str | None, ...)` using `requests.get("https://api.semanticscholar.org/graph/v1/paper/search", ...)`.
-- Query params: `query`, `fields` (e.g. `title`, `year`, `authors`, `publicationDate`, `url`, `externalIds`, `abstract`), pagination per [S2 API docs](https://api.semanticscholar.org/api-docs/).
-- **Date filtering:** confirm `publicationDateOrYear` semantics (single year vs range). For ISO weeks spanning two calendar years, use **two API calls**, **client-side filter** on `publicationDate`, or documented range syntax—whichever matches the API.
+- Query params: `query`, `fields` (e.g. `title`, `year`, `authors`, `publicationDate`, `url`, `externalIds`, `abstract`), `publicationDateOrYear={start_date}:{end_date}`, and offset/limit pagination per [S2 API docs](https://api.semanticscholar.org/api-docs/).
+- **Query normalization:** normalize the S2 query before sending it (replace hyphens with spaces, collapse whitespace, trim/cap length). Do not assume the OpenAlex query string is S2-safe.
+- **Date filtering:** still apply a mandatory backend-side `start_date`-`end_date` filter on parsed `publicationDate` / `year` before returning. `runner/weekly.py` only re-applies the exact week window when `week_spec` is set, so the backend itself must enforce the window for normal weekly runs too.
 - **`link`:** prefer `https://doi.org/{doi}` from `externalIds`; else S2 `url`.
 - **`id`:** `sha1(f"Semantic Scholar|{title}|{link}")` (same pattern as other backends).
 - **Env:** e.g. `SEMANTIC_SCHOLAR_API_KEY` / `S2_API_KEY` → header `x-api-key`; `SEMANTIC_SCHOLAR_TIMEOUT`, `SEMANTIC_SCHOLAR_MAX_ITEMS`, optional page size; on HTTP errors / empty body, warn and return `[]` like `news.py` when unconfigured.
 
 ### 2. `tocify/historical.py`
 
-- Add `elif name == "semanticscholar":` importing `fetch_semantic_scholar_items` with the same query string as OpenAlex (simplest: reuse `openalex_search` kwarg for the search string, or add `semanticscholar_query` if you prefer an explicit name).
+- Add `elif name == "semanticscholar":` importing `fetch_semantic_scholar_items` with an explicit `semanticscholar_query` kwarg (fallback to `openalex_search` only if omitted for backward compatibility).
 - Update module/docstring list of backend names.
 
 ### 3. `tocify/runner/weekly.py`
 
 - `WEEKLY_SEMANTIC_SCHOLAR` via `env_bool` (choose default explicitly: **off** avoids surprise 429s without a key; **on** matches `WEEKLY_OPENALEX` aggressiveness—document in commit).
-- If enabled and `topic_search` non-empty: `backends.append("semanticscholar")` and pass query into `fetch_historical_items(...)`.
+- If enabled and `topic_search` non-empty: `backends.append("semanticscholar")` and pass the explicit normalized Semantic Scholar query into `fetch_historical_items(...)`.
 
 ### 4. Tests
 
-- `tests/test_semanticscholar.py` — mock `requests.get`, assert normalized items and that dates outside `start_date`–`end_date` are dropped if filtering is client-side.
+- `tests/test_semanticscholar.py` — mock `requests.get`, assert normalized items, query normalization, and that dates outside `start_date`-`end_date` are dropped before return.
+- Add a `run_weekly()`-level unit test using `tests/runner_test_utils.py` to verify `WEEKLY_SEMANTIC_SCHOLAR=1` appends the backend and forwards `week_start`, `week_end`, and `semanticscholar_query` to `fetch_historical_items(...)`.
 
 ### 5. Version
 
@@ -85,6 +89,7 @@ flowchart LR
 ## Risks
 
 - **Rate limits / 429** without API key; graceful empty return + warning.
+- **Relevance search cap:** `/graph/v1/paper/search` only returns the first 1,000 relevance-ranked results; acceptable for narrow weekly topic queries, but document as a ceiling.
 - **Duplicate narratives** in triage if both OpenAlex and S2 return the same paper under different links.
 
 ## Implementation hygiene
