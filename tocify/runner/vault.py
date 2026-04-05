@@ -54,17 +54,41 @@ class PromptRunResult:
     stderr: str = ""
 
 
+def _use_flat_feeds(vault_root: Path) -> bool:
+    """Determine whether to use flat feed directories (legacy layout).
+
+    Auto-detects single-topic vaults and defaults to flat. Env var override:
+    TOCIFY_FLAT_FEEDS=1 forces flat, TOCIFY_FLAT_FEEDS=0 forces scoped.
+    """
+    flat_override = os.environ.get("TOCIFY_FLAT_FEEDS", "").strip().lower()
+    if flat_override in ("1", "true", "yes"):
+        return True
+    if flat_override in ("0", "false", "no"):
+        return False
+    return len(list_topics(vault_root)) <= 1
+
+
 def get_topic_paths(topic: str, vault_root: Path | None = None) -> TopicPaths:
     """Return paths for the given topic."""
     root = vault_root or VAULT_ROOT
     config = root / "config"
     content = root / "content"
+
+    if _use_flat_feeds(root):
+        weekly_dir = _legacy_feed_dir(root, "weekly")
+        monthly_dir = _legacy_feed_dir(root, "monthly")
+        yearly_dir = _legacy_feed_dir(root, "yearly")
+    else:
+        weekly_dir = content / "feeds" / "weekly" / topic
+        monthly_dir = content / "feeds" / "monthly" / topic
+        yearly_dir = content / "feeds" / "yearly" / topic
+
     return TopicPaths(
         feeds_path=config / f"feeds.{topic}.md",
         interests_path=config / f"interests.{topic}.md",
-        weekly_dir=content / "feeds" / "weekly" / topic,
-        monthly_dir=content / "feeds" / "monthly" / topic,
-        yearly_dir=content / "feeds" / "yearly" / topic,
+        weekly_dir=weekly_dir,
+        monthly_dir=monthly_dir,
+        yearly_dir=yearly_dir,
         logs_dir=root / "logs",
         briefs_articles_csv=content / "briefs_articles.csv",
         prompt_path=config / "triage_prompt.md",
