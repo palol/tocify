@@ -625,7 +625,7 @@ def run_agent_and_save_output(
         model=model,
         purpose="runner-generation",
         expand_refs=None,
-        trust=False,
+        trust=True,
         raise_on_error=False,
     )
 

@@ -45,6 +45,24 @@ class RunnerBackendDispatchTests(unittest.TestCase):
                 parsed = VAULT.run_structured_prompt("prompt", schema={"type": "object"})
         self.assertEqual(parsed, {"ok": True})
 
+    def test_run_agent_and_save_output_passes_trust_to_cursor(self) -> None:
+        completed = types.SimpleNamespace(returncode=0, stdout="generated memo", stderr="")
+        captured_cmd: list[str] = []
+
+        def _capture_run(cmd, **_kwargs):
+            captured_cmd.extend(cmd)
+            return completed
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            output = root / "out.md"
+            log = root / "out.log"
+            with patch.dict(os.environ, {"TOCIFY_BACKEND": "cursor", "CURSOR_API_KEY": "x"}, clear=False):
+                with patch.object(VAULT.subprocess, "run", side_effect=_capture_run):
+                    VAULT.run_agent_and_save_output("prompt", output, log, "fallback")
+
+            self.assertIn("--trust", captured_cmd)
+
     def test_run_agent_and_save_output_uses_fallback_when_cursor_command_fails(self) -> None:
         completed = types.SimpleNamespace(returncode=2, stdout="", stderr="boom")
         with tempfile.TemporaryDirectory() as td:
