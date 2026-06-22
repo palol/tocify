@@ -19,7 +19,7 @@ It’s meant to be forked and customized.
 - **`prompt.txt`** — prompt template (used by OpenAI and Cursor backends)
 - **`digest.md`** — generated output (auto-updated)
 - **`.github/workflows/weekly-digest.yml`** — scheduled GitHub Action
-- **`requirements.txt`** — Python dependencies
+- **`requirements.txt`** — Python dependencies (includes `selectolax` for the HTML adapter)
 - **`.python-version`** — pinned Python version (used by uv, pyenv, etc.)
 
 ---
@@ -68,3 +68,45 @@ PLOS Biology | https://journals.plos.org/plosbiology/rss
 
 # Preprints
 bioRxiv neuroscience | https://www.biorxiv.org/rss/subject/neuroscience.xml
+```
+
+### HTML adapter (opt-in)
+
+Some sources (company news pages, etc.) don't publish RSS. tocify ships an
+HTML adapter behind a feature flag. Enable with:
+
+```bash
+export TOCIFY_ENABLE_HTML=1
+```
+
+Then add lines to `feeds.txt` with a third `| TYPE [selectors]` field:
+
+```txt
+# Type defaults to `rss`. Use `html` for non-feed pages.
+Paradromics | https://www.paradromics.com/news | html
+Synchron | https://synchron.com/news | html item="a[href*='/news/']" title="h3"
+Science Corp | https://science.xyz | html item="div[class*=card]" title=".title" link="a@href" date="time@datetime"
+```
+
+**Selector keys** (all optional; sensible defaults are tried):
+
+| Key | Meaning | Example |
+|---|---|---|
+| `item` | repeating element | `article`, `li.post`, `div[class*=card]` |
+| `title` | item title | `h2, h3, .title` |
+| `link` | item URL — usually `a@href` | `a@href` |
+| `date` | publish date (parsed via dateutil) | `time@datetime` |
+| `summary` | item blurb | `p.excerpt` |
+
+Append `@attr` to any selector to pull an attribute (e.g. `time@datetime`,
+`a@href`) instead of the element's text.
+
+**Env knobs:**
+
+- `TOCIFY_ENABLE_HTML` — `1` to enable HTML adapter (default `0`)
+- `TOCIFY_HTML_TIMEOUT` — seconds per request (default `20`)
+- `TOCIFY_HTML_USER_AGENT` — override request UA
+
+Limitations (v1): no JavaScript rendering (SPA pages like neuralink.com/updates
+yield nothing); no item-page fetch (dates must appear on the index page or items
+bypass the lookback cutoff).
