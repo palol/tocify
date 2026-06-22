@@ -1,0 +1,680 @@
+"""Vault layout: per-topic config plus topic-scoped feed outputs under shared content/. VAULT_ROOT from BCI_VAULT_ROOT."""
+
+import datetime as dt
+import json
+import os
+import re
+import subprocess
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from tocify.frontmatter import split_frontmatter_and_body
+from tocify.integrations import get_triage_runtime_metadata, resolve_backend_name
+from tocify.integrations._shared import extract_first_json_object
+
+VAULT_ROOT = Path(os.environ.get("BCI_VAULT_ROOT", ".")).resolve()
+
+
+@dataclass(frozen=True)
+class TopicPaths:
+    """Paths for a single topic (topic-scoped feeds output dirs; shared logs/csv)."""
+
+    feeds_path: Path
+    interests_path: Path
+    weekly_dir: Path
+    monthly_dir: Path
+    yearly_dir: Path
+    logs_dir: Path
+    briefs_articles_csv: Path
+    prompt_path: Path
+    news_prompt_path: Path
+    gardener_prompt_path: Path
+    monthly_prompt_path: Path
+    annual_prompt_path: Path
+    edgar_ciks_path: Path
+    newsrooms_path: Path
+
+
+@dataclass
+class PromptRunResult:
+    """Result metadata for one backend prompt run."""
+
+    backend: str
+    model: str
+    output_text: str = ""
+    attempts: int = 0
+    response_id: str = ""
+    refs: list[Path] = field(default_factory=list)
+    ref_chars: int = 0
+    terminal_error: str = ""
+    command: list[str] = field(default_factory=list)
+    returncode: int = 0
+    stderr: str = ""
+
+
+def _use_flat_feeds(vault_root: Path) -> bool:
+    """Determine whether to use flat feed directories (legacy layout).
+
+    Auto-detects single-topic vaults and defaults to flat. Env var override:
+    TOCIFY_FLAT_FEEDS=1 forces flat, TOCIFY_FLAT_FEEDS=0 forces scoped.
+    """
+    flat_override = os.environ.get("TOCIFY_FLAT_FEEDS", "").strip().lower()
+    if flat_override in ("1", "true", "yes"):
+        return True
+    if flat_override in ("0", "false", "no"):
+        return False
+    return len(list_topics(vault_root)) <= 1
+
+
+def get_topic_paths(topic: str, vault_root: Path | None = None) -> TopicPaths:
+    """Return paths for the given topic."""
+    root = vault_root or VAULT_ROOT
+    config = root / "config"
+    content = root / "content"
+
+    if _use_flat_feeds(root):
+        weekly_dir = _legacy_feed_dir(root, "weekly")
+        monthly_dir = _legacy_feed_dir(root, "monthly")
+        yearly_dir = _legacy_feed_dir(root, "yearly")
+    else:
+        weekly_dir = content / "feeds" / "weekly" / topic
+        monthly_dir = content / "feeds" / "monthly" / topic
+        yearly_dir = content / "feeds" / "yearly" / topic
+
+    return TopicPaths(
+        feeds_path=config / f"feeds.{topic}.md",
+        interests_path=config / f"interests.{topic}.md",
+        weekly_dir=weekly_dir,
+        monthly_dir=monthly_dir,
+        yearly_dir=yearly_dir,
+        logs_dir=root / "logs",
+        briefs_articles_csv=content / "briefs_articles.csv",
+        prompt_path=config / "triage_prompt.md",
+        news_prompt_path=config / "triage_prompt_news.md",
+        gardener_prompt_path=config / "gardener_prompt.md",
+        monthly_prompt_path=config / "monthly_roundup_prompt.md",
+        annual_prompt_path=config / "annual_review_prompt.md",
+        edgar_ciks_path=config / f"edgar_ciks.{topic}.md",
+        newsrooms_path=config / f"newsrooms.{topic}.md",
+    )
+
+
+def list_topics(vault_root: Path | None = None) -> list[str]:
+    """Discover topics from config: glob feeds.*.md; require interests.<topic>.md to exist."""
+    root = vault_root or VAULT_ROOT
+    config = root / "config"
+    topics = []
+    if not config.exists():
+        return topics
+    for path in config.glob("feeds.*.md"):
+        stem = path.stem
+        if stem.startswith("feeds."):
+            topic = stem[6:].strip()
+            if topic and (config / f"interests.{topic}.md").exists():
+                topics.append(topic)
+    return sorted(topics)
+
+
+_WEEK_BRIEF_STEM_RE = re.compile(r"^(\d{4})\s+week\s+(\d+)$")
+
+
+def _legacy_feed_dir(root: Path, period: str) -> Path:
+    """Return the pre-topic layout directory for backward-compatible reads."""
+    return root / "content" / "feeds" / period
+
+
+def _topic_matches_frontmatter(path: Path, topic: str) -> bool:
+    """Return True when a markdown file frontmatter has topic=<topic>."""
+    try:
+        frontmatter, _ = split_frontmatter_and_body(path.read_text(encoding="utf-8"))
+    except OSError:
+        return False
+    return str(frontmatter.get("topic") or "").strip() == topic
+
+
+def load_briefs_for_date_range(
+    start_date: dt.date, end_date: dt.date, topic: str, vault_root: Path | None = None
+) -> list[Path]:
+    """Load weekly briefs in the topic dir, with legacy shared-dir fallback."""
+    paths = get_topic_paths(topic, vault_root)
+    root = vault_root or VAULT_ROOT
+    weekly_dir = paths.weekly_dir
+    legacy_weekly_dir = _legacy_feed_dir(root, "weekly")
+    briefs_by_week: dict[dt.date, tuple[int, Path]] = {}
+
+    candidate_dirs = [(0, weekly_dir, True)]
+    if legacy_weekly_dir != weekly_dir:
+        candidate_dirs.append((1, legacy_weekly_dir, False))
+
+    for priority, directory, trusted_topic_dir in candidate_dirs:
+        if not directory.exists():
+            continue
+        for path in directory.glob("* week *.md"):
+            try:
+                stem = path.stem
+                match = _WEEK_BRIEF_STEM_RE.match(stem.strip())
+                if not match:
+                    continue
+                year, week = int(match.group(1)), int(match.group(2))
+                week_end = dt.date.fromisocalendar(year, week, 7)
+                if not (start_date <= week_end <= end_date):
+                    continue
+                if not trusted_topic_dir and not _topic_matches_frontmatter(path, topic):
+                    continue
+                previous = briefs_by_week.get(week_end)
+                if previous is None or priority < previous[0]:
+                    briefs_by_week[week_end] = (priority, path)
+            except (ValueError, TypeError):
+                continue
+
+    return [briefs_by_week[week_end][1] for week_end in sorted(briefs_by_week)]
+
+
+_MONTH_STEM_RE = re.compile(r"^(\d{4})-(\d{2})$")
+
+
+def load_monthly_roundups_for_year(
+    year: int, topic: str, vault_root: Path | None = None
+) -> list[Path]:
+    """Load monthly roundups for the topic/year, with legacy shared-dir fallback."""
+    paths = get_topic_paths(topic, vault_root)
+    root = vault_root or VAULT_ROOT
+    monthly_dir = paths.monthly_dir
+    legacy_monthly_dir = _legacy_feed_dir(root, "monthly")
+    roundups_by_month: dict[dt.date, tuple[int, Path]] = {}
+
+    candidate_dirs = [(0, monthly_dir, True)]
+    if legacy_monthly_dir != monthly_dir:
+        candidate_dirs.append((1, legacy_monthly_dir, False))
+
+    for priority, directory, trusted_topic_dir in candidate_dirs:
+        if not directory.exists():
+            continue
+        for path in directory.glob("*.md"):
+            try:
+                stem = path.stem
+                match = _MONTH_STEM_RE.match(stem)
+                if not match:
+                    continue
+                y, m = int(match.group(1)), int(match.group(2))
+                if y != year:
+                    continue
+                if not trusted_topic_dir and not _topic_matches_frontmatter(path, topic):
+                    continue
+                last_day = dt.date(y, 12, 31) if m == 12 else dt.date(y, m + 1, 1) - dt.timedelta(days=1)
+                previous = roundups_by_month.get(last_day)
+                if previous is None or priority < previous[0]:
+                    roundups_by_month[last_day] = (priority, path)
+            except (ValueError, TypeError):
+                continue
+
+    return [roundups_by_month[last_day][1] for last_day in sorted(roundups_by_month)]
+
+
+def _resolve_reference_path(raw_path: str) -> Path:
+    candidate = Path(raw_path.strip()).expanduser()
+    if candidate.is_absolute():
+        return candidate
+
+    vault_candidate = (VAULT_ROOT / candidate).resolve()
+    if vault_candidate.exists():
+        return vault_candidate
+    return candidate.resolve()
+
+
+def _expand_prompt_references(prompt: str) -> tuple[str, list[Path], int]:
+    """Expand lines like '@path/to/file.md' into inline source blocks."""
+    max_files = int(os.environ.get("TOCIFY_PROMPT_REF_MAX_FILES", "200"))
+    max_chars = int(os.environ.get("TOCIFY_PROMPT_REF_MAX_CHARS", "1000000"))
+
+    out_lines: list[str] = []
+    resolved_paths: list[Path] = []
+    total_chars = 0
+
+    for line in prompt.splitlines():
+        stripped = line.strip()
+        match = re.match(r"^@(.+)$", stripped)
+        if not match:
+            out_lines.append(line)
+            continue
+
+        raw_path = match.group(1).strip()
+        path = _resolve_reference_path(raw_path)
+        if not path.exists() or not path.is_file():
+            raise FileNotFoundError(f"Referenced source file not found: {raw_path} -> {path}")
+
+        text = path.read_text(encoding="utf-8")
+        resolved_paths.append(path)
+        total_chars += len(text)
+
+        if len(resolved_paths) > max_files:
+            raise RuntimeError(
+                f"Too many @file references in prompt: {len(resolved_paths)} > {max_files}"
+            )
+        if total_chars > max_chars:
+            raise RuntimeError(
+                f"Referenced prompt content too large: {total_chars} chars > {max_chars}"
+            )
+
+        out_lines.append(f"[BEGIN SOURCE: {path}]")
+        out_lines.append(text)
+        out_lines.append(f"[END SOURCE: {path}]")
+
+    return "\n".join(out_lines), resolved_paths, total_chars
+
+
+def _resolve_runner_model(backend: str, model: str | None) -> str:
+    if model and model.strip():
+        return model.strip()
+    return get_triage_runtime_metadata()["triage_model"]
+
+
+def _maybe_expand_prompt(
+    prompt: str,
+    *,
+    backend: str,
+    expand_refs: bool | None,
+) -> tuple[str, list[Path], int]:
+    should_expand = backend in ("openai", "gemini") if expand_refs is None else bool(expand_refs)
+    if not should_expand:
+        return prompt, [], 0
+    return _expand_prompt_references(prompt)
+
+
+def _run_openai_prompt(
+    prompt: str,
+    *,
+    model: str,
+    purpose: str,
+    json_schema: dict | None,
+    expand_refs: bool | None,
+    raise_on_error: bool,
+) -> PromptRunResult:
+    """Execute prompt via OpenAI Responses API; optional JSON schema for structured output."""
+    result = PromptRunResult(backend="openai", model=model)
+    try:
+        expanded_prompt, refs, ref_chars = _maybe_expand_prompt(
+            prompt,
+            backend="openai",
+            expand_refs=expand_refs,
+        )
+        result.refs = refs
+        result.ref_chars = ref_chars
+    except Exception as e:
+        result.terminal_error = f"{e.__class__.__name__}: {e}"
+        if raise_on_error:
+            raise RuntimeError(f"openai {purpose} failed: {result.terminal_error}") from e
+        return result
+
+    try:
+        import httpx
+        from openai import APITimeoutError, APIConnectionError, OpenAI, RateLimitError
+    except Exception as e:
+        result.terminal_error = f"{e.__class__.__name__}: {e}"
+        if raise_on_error:
+            raise RuntimeError(f"openai {purpose} failed: {result.terminal_error}") from e
+        return result
+
+    try:
+        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if not api_key.startswith("sk-"):
+            raise RuntimeError("OPENAI_API_KEY missing/invalid (expected to start with 'sk-').")
+        http_client = httpx.Client(
+            timeout=httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0),
+            http2=False,
+            trust_env=False,
+            headers={"Connection": "close", "Accept-Encoding": "gzip"},
+        )
+        client = OpenAI(api_key=api_key, http_client=http_client)
+    except Exception as e:
+        result.terminal_error = f"{e.__class__.__name__}: {e}"
+        if raise_on_error:
+            raise RuntimeError(f"openai {purpose} failed: {result.terminal_error}") from e
+        return result
+
+    for attempt in range(6):
+        result.attempts = attempt + 1
+        try:
+            kwargs: dict[str, Any] = {"model": model, "input": expanded_prompt}
+            if json_schema is not None:
+                kwargs["text"] = {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "runner_structured_output",
+                        "schema": json_schema,
+                        "strict": True,
+                    }
+                }
+            response = client.responses.create(**kwargs)
+            result.response_id = getattr(response, "id", "") or ""
+            result.output_text = (getattr(response, "output_text", "") or "").strip()
+            if result.output_text:
+                return result
+            result.terminal_error = "RuntimeError: Empty output from OpenAI response."
+        except (APITimeoutError, APIConnectionError, RateLimitError) as e:
+            result.terminal_error = f"{e.__class__.__name__}: {e}"
+            if attempt < 5:
+                time.sleep(min(60, 2**attempt))
+        except Exception as e:
+            result.terminal_error = f"{e.__class__.__name__}: {e}"
+            break
+
+    if raise_on_error:
+        raise RuntimeError(f"openai {purpose} failed: {result.terminal_error or 'unknown error'}")
+    return result
+
+
+def _run_gemini_prompt(
+    prompt: str,
+    *,
+    model: str,
+    purpose: str,
+    json_schema: dict | None,
+    expand_refs: bool | None,
+    raise_on_error: bool,
+) -> PromptRunResult:
+    """Execute prompt via Gemini API; optional JSON schema for structured output."""
+    result = PromptRunResult(backend="gemini", model=model)
+    try:
+        expanded_prompt, refs, ref_chars = _maybe_expand_prompt(
+            prompt,
+            backend="gemini",
+            expand_refs=expand_refs,
+        )
+        result.refs = refs
+        result.ref_chars = ref_chars
+    except Exception as e:
+        result.terminal_error = f"{e.__class__.__name__}: {e}"
+        if raise_on_error:
+            raise RuntimeError(f"gemini {purpose} failed: {result.terminal_error}") from e
+        return result
+
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        result.terminal_error = "RuntimeError: GEMINI_API_KEY missing/invalid."
+        if raise_on_error:
+            raise RuntimeError(f"gemini {purpose} failed: {result.terminal_error}")
+        return result
+
+    try:
+        from google import genai
+    except Exception as e:
+        result.terminal_error = f"{e.__class__.__name__}: {e}"
+        if raise_on_error:
+            raise RuntimeError(f"gemini {purpose} failed: {result.terminal_error}") from e
+        return result
+
+    try:
+        client = genai.Client(api_key=api_key)
+    except Exception as e:
+        result.terminal_error = f"{e.__class__.__name__}: {e}"
+        if raise_on_error:
+            raise RuntimeError(f"gemini {purpose} failed: {result.terminal_error}") from e
+        return result
+
+    for attempt in range(6):
+        result.attempts = attempt + 1
+        try:
+            config_candidates: list[dict[str, Any] | None]
+            if json_schema is None:
+                config_candidates = [None]
+            else:
+                config_candidates = [
+                    {"response_mime_type": "application/json", "response_schema": json_schema},
+                    {"response_mime_type": "application/json", "response_json_schema": json_schema},
+                ]
+
+            response_text = ""
+            last_type_error: Exception | None = None
+            for config in config_candidates:
+                try:
+                    if config is None:
+                        response = client.models.generate_content(model=model, contents=expanded_prompt)
+                    else:
+                        response = client.models.generate_content(
+                            model=model,
+                            contents=expanded_prompt,
+                            config=config,
+                        )
+                    response_text = (getattr(response, "text", "") or "").strip()
+                    if response_text:
+                        break
+                except TypeError as e:
+                    last_type_error = e
+
+            if not response_text and last_type_error is not None:
+                raise RuntimeError("Gemini client rejected schema config; check google-genai version.") from last_type_error
+            if not response_text:
+                raise RuntimeError("Empty response text from Gemini")
+            result.output_text = response_text
+            return result
+        except Exception as e:
+            result.terminal_error = f"{e.__class__.__name__}: {e}"
+            if attempt < 5:
+                time.sleep(min(60, 2**attempt))
+
+    if raise_on_error:
+        raise RuntimeError(f"gemini {purpose} failed: {result.terminal_error or 'unknown error'}")
+    return result
+
+
+def _run_cursor_prompt(
+    prompt: str,
+    *,
+    model: str,
+    purpose: str,
+    trust: bool,
+    raise_on_error: bool,
+) -> PromptRunResult:
+    """Execute prompt via Cursor CLI (`agent -p`); returns raw text (no structured output)."""
+    result = PromptRunResult(backend="cursor", model=model)
+    cmd = ["agent", "-p", "--output-format", "text"]
+    if trust:
+        cmd.append("--trust")
+    if model and model != "unknown":
+        cmd.extend(["--model", model])
+
+    try:
+        completed = subprocess.run(
+            cmd, capture_output=True, text=True, input=prompt, env=os.environ
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            "Cursor backend selected but `agent` command was not found on PATH. "
+            "Install Cursor CLI agent support or set TOCIFY_BACKEND=openai|gemini."
+        ) from e
+
+    result.command = cmd + ["<stdin>"]
+    result.returncode = int(getattr(completed, "returncode", 0) or 0)
+    result.output_text = (completed.stdout or "").strip()
+    result.stderr = (completed.stderr or "").strip()
+    if result.returncode != 0:
+        result.terminal_error = (
+            f"cursor {purpose} exit {result.returncode}: "
+            f"{result.stderr or result.output_text or 'no output'}"
+        )
+        if raise_on_error:
+            raise RuntimeError(result.terminal_error)
+    return result
+
+
+def run_backend_prompt(
+    prompt: str,
+    *,
+    model: str | None = None,
+    purpose: str = "runner",
+    json_schema: dict | None = None,
+    expand_refs: bool | None = None,
+    trust: bool = False,
+    raise_on_error: bool = True,
+) -> PromptRunResult:
+    """Run a prompt through the active backend and return result metadata."""
+    backend = resolve_backend_name()
+    selected_model = _resolve_runner_model(backend, model)
+
+    if backend == "openai":
+        return _run_openai_prompt(
+            prompt,
+            model=selected_model,
+            purpose=purpose,
+            json_schema=json_schema,
+            expand_refs=expand_refs,
+            raise_on_error=raise_on_error,
+        )
+    if backend == "gemini":
+        return _run_gemini_prompt(
+            prompt,
+            model=selected_model,
+            purpose=purpose,
+            json_schema=json_schema,
+            expand_refs=expand_refs,
+            raise_on_error=raise_on_error,
+        )
+    return _run_cursor_prompt(
+        prompt,
+        model=selected_model,
+        purpose=purpose,
+        trust=trust,
+        raise_on_error=raise_on_error,
+    )
+
+
+def run_structured_prompt(
+    prompt: str,
+    *,
+    schema: dict,
+    model: str | None = None,
+    purpose: str = "runner-structured",
+    expand_refs: bool | None = None,
+    trust: bool = False,
+) -> dict:
+    """Run a prompt and parse the first JSON object from model output."""
+    result = run_backend_prompt(
+        prompt,
+        model=model,
+        purpose=purpose,
+        json_schema=schema,
+        expand_refs=expand_refs,
+        trust=trust,
+        raise_on_error=True,
+    )
+    response_text = (result.output_text or "").strip()
+    if not response_text:
+        raise ValueError("No JSON object found in model output")
+    try:
+        return json.loads(extract_first_json_object(response_text))
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in model output: {e}") from e
+
+
+def _build_prompt_log(
+    result: PromptRunResult,
+    final_output: str,
+    used_fallback: bool,
+    preserved_agent_file: bool,
+) -> str:
+    lines = [
+        f"backend={result.backend}",
+        f"model={result.model}",
+        f"response_id={result.response_id or '(none)'}",
+        f"attempts={result.attempts}",
+        f"expanded_refs={len(result.refs)}",
+        f"expanded_ref_chars={result.ref_chars}",
+        f"used_fallback={used_fallback}",
+        f"preserved_agent_file={preserved_agent_file}",
+        f"output_chars={len(final_output)}",
+    ]
+    if result.command:
+        lines.append("command=" + " ".join(result.command))
+    if result.returncode:
+        lines.append(f"returncode={result.returncode}")
+    if result.terminal_error:
+        lines.append(f"terminal_error={result.terminal_error}")
+    if result.refs:
+        lines.append("ref_paths=")
+        lines.extend(str(p) for p in result.refs)
+    if result.stderr:
+        lines.append("stderr=")
+        lines.append(result.stderr)
+    return "\n".join(lines) + "\n"
+
+
+def run_agent_and_save_output(
+    prompt: str,
+    output_path: Path,
+    log_path: Path,
+    fallback_content: str,
+    *,
+    model: str | None = None,
+) -> None:
+    """Run content generation and save output/log."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    output_pre_exists = output_path.exists()
+    output_pre_mtime_ns: int | None = None
+    if output_pre_exists:
+        try:
+            output_pre_mtime_ns = output_path.stat().st_mtime_ns
+        except OSError:
+            output_pre_mtime_ns = None
+
+    result = run_backend_prompt(
+        prompt,
+        model=model,
+        purpose="runner-generation",
+        expand_refs=None,
+        trust=True,
+        raise_on_error=False,
+    )
+
+    response_text = (result.output_text or "").strip()
+    used_fallback = not bool(response_text)
+    preserved_agent_file = False
+
+    if used_fallback:
+        output_post_exists = output_path.exists()
+        output_post_mtime_ns: int | None = None
+        if output_post_exists:
+            try:
+                output_post_mtime_ns = output_path.stat().st_mtime_ns
+            except OSError:
+                output_post_mtime_ns = None
+
+        file_changed_during_run = False
+        if output_post_exists and not output_pre_exists:
+            file_changed_during_run = True
+        elif output_pre_exists and output_post_exists:
+            if output_pre_mtime_ns is not None and output_post_mtime_ns is not None:
+                file_changed_during_run = output_post_mtime_ns != output_pre_mtime_ns
+            else:
+                file_changed_during_run = True
+
+        if file_changed_during_run and output_post_exists:
+            preserved_agent_file = True
+            used_fallback = False
+            try:
+                final_output = output_path.read_text(encoding="utf-8")
+            except OSError:
+                final_output = ""
+            if final_output and not final_output.endswith("\n"):
+                final_output += "\n"
+                output_path.write_text(final_output, encoding="utf-8")
+        else:
+            final_output = fallback_content if fallback_content.endswith("\n") else fallback_content + "\n"
+            output_path.write_text(final_output, encoding="utf-8")
+    else:
+        final_output = response_text if response_text.endswith("\n") else response_text + "\n"
+        output_path.write_text(final_output, encoding="utf-8")
+
+    try:
+        from tocify.markdown_lint import lint_file
+        lint_file(output_path)
+    except ModuleNotFoundError:
+        pass  # skip lint when vault is loaded in isolation (e.g. tests)
+
+    log_path.write_text(
+        _build_prompt_log(result, final_output, used_fallback, preserved_agent_file),
+        encoding="utf-8",
+    )

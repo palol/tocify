@@ -201,6 +201,10 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 .cursor/
+#  Tocify/Cursor runner: generated and helper JSON (e.g. topic_actions_*.json, Cursor-produced action files)
+logs/*.json
+content/logs/*.json
+*action*.json
 
 # Marimo
 marimo/_static/
@@ -209,4 +213,5 @@ __marimo__/
 
 # uv
 uv.lock
-pyproject.toml
+
+test_vault/

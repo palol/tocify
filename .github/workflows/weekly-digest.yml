@@ -1,10 +1,10 @@
 name: Weekly ToC Digest (OpenAI)
 
 on:
-  schedule:
-    # Mondays 08:00 America/Los_Angeles ≈ 16:00 UTC (adjust if you like)
-    - cron: "00 16 * * 1"
   workflow_dispatch:
+  # Example weekly schedule for forks (disabled in this repo):
+  # schedule:
+  #   - cron: "0 9 * * 1" # Mondays 09:00 UTC
 
 permissions:
   contents: write
