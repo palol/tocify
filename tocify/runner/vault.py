@@ -277,7 +277,7 @@ def _maybe_expand_prompt(
     backend: str,
     expand_refs: bool | None,
 ) -> tuple[str, list[Path], int]:
-    should_expand = backend in ("openai", "gemini") if expand_refs is None else bool(expand_refs)
+    should_expand = backend in ("openai", "gemini", "cursor") if expand_refs is None else bool(expand_refs)
     if not should_expand:
         return prompt, [], 0
     return _expand_prompt_references(prompt)
