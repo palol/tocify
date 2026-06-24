@@ -277,7 +277,7 @@ def _maybe_expand_prompt(
     backend: str,
     expand_refs: bool | None,
 ) -> tuple[str, list[Path], int]:
-    should_expand = backend in ("openai", "gemini", "cursor") if expand_refs is None else bool(expand_refs)
+    should_expand = backend in ("openai", "gemini") if expand_refs is None else bool(expand_refs)
     if not should_expand:
         return prompt, [], 0
     return _expand_prompt_references(prompt)
@@ -468,35 +468,56 @@ def _run_cursor_prompt(
     trust: bool,
     raise_on_error: bool,
 ) -> PromptRunResult:
-    """Execute prompt via Cursor CLI (`agent -p`); returns raw text (no structured output)."""
+    """Execute prompt via Cursor CLI (`agent -p <file>`); returns raw text (no structured output).
+
+    Writes the prompt to a temp file and passes the path explicitly via `-p <file>` so that
+    Cursor Agent can resolve `@file` references relative to the working directory. Using stdin
+    (`input=prompt` with no file path after `-p`) does not trigger native @file expansion in CI.
+    """
+    import tempfile
     result = PromptRunResult(backend="cursor", model=model)
-    cmd = ["agent", "-p", "--output-format", "text"]
-    if trust:
-        cmd.append("--trust")
-    if model and model != "unknown":
-        cmd.extend(["--model", model])
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".md", delete=False, encoding="utf-8"
+    ) as tmp:
+        tmp.write(prompt)
+        prompt_path = tmp.name
 
     try:
-        completed = subprocess.run(
-            cmd, capture_output=True, text=True, input=prompt, env=os.environ
-        )
-    except FileNotFoundError as e:
-        raise RuntimeError(
-            "Cursor backend selected but `agent` command was not found on PATH. "
-            "Install Cursor CLI agent support or set TOCIFY_BACKEND=openai|gemini."
-        ) from e
+        cmd = ["agent", "-p", prompt_path, "--output-format", "text"]
+        if trust:
+            cmd.append("--trust")
+        if model and model != "unknown":
+            cmd.extend(["--model", model])
 
-    result.command = cmd + ["<stdin>"]
-    result.returncode = int(getattr(completed, "returncode", 0) or 0)
-    result.output_text = (completed.stdout or "").strip()
-    result.stderr = (completed.stderr or "").strip()
-    if result.returncode != 0:
-        result.terminal_error = (
-            f"cursor {purpose} exit {result.returncode}: "
-            f"{result.stderr or result.output_text or 'no output'}"
-        )
-        if raise_on_error:
-            raise RuntimeError(result.terminal_error)
+        try:
+            completed = subprocess.run(
+                cmd, capture_output=True, text=True, env=os.environ
+            )
+        except FileNotFoundError as e:
+            raise RuntimeError(
+                "Cursor backend selected but `agent` command was not found on PATH. "
+                "Install Cursor CLI agent support or set TOCIFY_BACKEND=openai|gemini."
+            ) from e
+
+        result.command = cmd
+        result.returncode = int(getattr(completed, "returncode", 0) or 0)
+        result.output_text = (completed.stdout or "").strip()
+        result.stderr = (completed.stderr or "").strip()
+        if result.returncode != 0:
+            result.terminal_error = (
+                f"cursor {purpose} exit {result.returncode}: "
+                f"{result.stderr or result.output_text or 'no output'}"
+            )
+            if raise_on_error:
+                raise RuntimeError(result.terminal_error)
+    finally:
+        try:
+            import os as _os
+            _os.unlink(prompt_path)
+        except OSError:
+            pass
+
     return result
 
 
