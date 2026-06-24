@@ -44,7 +44,7 @@ _TIER_TAG_RE = re.compile(r"^tier-\d+$")
 
 
 def default_note_frontmatter(path: Path | None = None) -> dict[str, Any]:
-    """Return default frontmatter from the note template (Quartz-compatible; publish: false).
+    """Return default frontmatter from the note template (Quartz-compatible; publish: true).
 
     If path is provided and exists, read and parse that file's frontmatter.
     Otherwise load the bundled tocify/templates/note_template.md. Returns a copy so callers may mutate.
@@ -64,9 +64,9 @@ def _load_bundled_template() -> dict[str, Any]:
     except Exception:
         # Fallback when not installed as package (e.g. dev from repo)
         p = Path(__file__).resolve().parent / "templates" / "note_template.md"
-        raw = p.read_text(encoding="utf-8") if p.exists() else "---\npublish: false\nenableToc: true\ntags: []\n---"
+        raw = p.read_text(encoding="utf-8") if p.exists() else "---\npublish: true\nenableToc: true\ntags: []\n---"
     fm, _ = split_frontmatter_and_body(raw)
-    return dict(fm) if fm else {"publish": False, "enableToc": True, "tags": []}
+    return dict(fm) if fm else {"publish": True, "enableToc": True, "tags": []}
 
 
 def _parse_scalar(raw: str) -> Any:
